@@ -4,3 +4,6 @@
 [submodule "lib/plugins/discussion"]
 	path = lib/plugins/discussion
 	url = git://github.com/dokufreaks/plugin-discussion.git
+[submodule "lib/plugins/pagemove"]
+	path = lib/plugins/pagemove
+	url = git://github.com/desolat/DokuWiki-Pagemove-Plugin.git

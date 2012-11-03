@@ -6,7 +6,7 @@
  * @author     Christopher Smith <chris@jalakai.co.uk>
  */
  
-// must be run within Dokuwiki
+// must be run within DokuWiki
 if(!defined('DOKU_INC')) die();
  
 if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
@@ -25,10 +25,10 @@ class syntax_plugin_color extends DokuWiki_Syntax_Plugin {
         return array(
             'author' => 'Christopher Smith',
             'email'  => 'chris@jalakai.co.uk',
-            'date'   => '2005-07-31',
+            'date'   => '2008-02-06',
             'name'   => 'Color Plugin',
             'desc'   => 'Changes text colour and background',
-            'url'    => 'http://wiki.splitbrain.org/plugin:tutorial',
+            'url'    => 'http://www.dokuwiki.org/plugin:tutorial',
         );
     }
  
@@ -82,13 +82,13 @@ class syntax_plugin_color extends DokuWiki_Syntax_Plugin {
     function _isValid($c) {
         $c = trim($c);
  
-        $pattern = "/
-            ([a-zA-z]+)|                                #colorname - not verified
+        $pattern = "/^\s*(
+            ([a-zA-Z]+)|                                #colorname - not verified
             (\#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}))|        #colorvalue
             (rgb\(([0-9]{1,3}%?,){2}[0-9]{1,3}%?\))     #rgb triplet
-            /x";
+            )\s*$/x";
  
-        if (preg_match($pattern, $c)) return $c;
+        if (preg_match($pattern, $c)) return trim($c);
  
         return "";
     }

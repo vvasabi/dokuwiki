@@ -1,3 +1,6 @@
 [submodule "lib/tpl/arctic"]
 	path = lib/tpl/arctic
 	url = git://github.com/vvasabi/dokuwiki-template-arctic.git
+[submodule "lib/plugins/discussion"]
+	path = lib/plugins/discussion
+	url = git://github.com/dokufreaks/plugin-discussion.git

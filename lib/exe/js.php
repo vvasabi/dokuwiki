@@ -6,13 +6,11 @@
  * @author     Andreas Gohr <andi@splitbrain.org>
  */
 
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
+if(!defined('DOKU_INC')) define('DOKU_INC',dirname(__FILE__).'/../../');
 if(!defined('NOSESSION')) define('NOSESSION',true); // we do not use a session or authentication here (better caching)
 if(!defined('NL')) define('NL',"\n");
+if(!defined('DOKU_DISABLE_GZIP_OUTPUT')) define('DOKU_DISABLE_GZIP_OUTPUT',1); // we gzip ourself here
 require_once(DOKU_INC.'inc/init.php');
-require_once(DOKU_INC.'inc/pageutils.php');
-require_once(DOKU_INC.'inc/io.php');
-require_once(DOKU_INC.'inc/JSON.php');
 
 // Main (don't run when UNIT test)
 if(!defined('SIMPLE_TEST')){
@@ -31,119 +29,94 @@ if(!defined('SIMPLE_TEST')){
 function js_out(){
     global $conf;
     global $lang;
-    $edit  = (bool) $_REQUEST['edit'];   // edit or preview mode?
-    $write = (bool) $_REQUEST['write'];  // writable?
+    global $config_cascade;
 
     // The generated script depends on some dynamic options
-    $cache = getCacheName('scripts'.$edit.'x'.$write,'.js');
+    $cache = new cache('scripts'.$_SERVER['HTTP_HOST'].$_SERVER['SERVER_PORT'],'.js');
+    $cache->_event = 'JS_CACHE_USE';
 
-    // Array of needed files
+    // load minified version for some files
+    $min = $conf['compress'] ? '.min' : '';
+
+    // array of core files
     $files = array(
+                DOKU_INC."lib/scripts/jquery/jquery$min.js",
+                DOKU_INC.'lib/scripts/jquery/jquery.cookie.js',
+                DOKU_INC."lib/scripts/jquery/jquery-ui$min.js",
+                DOKU_INC."lib/scripts/fileuploader.js",
+                DOKU_INC."lib/scripts/fileuploaderextended.js",
                 DOKU_INC.'lib/scripts/helpers.js',
-                DOKU_INC.'lib/scripts/events.js',
+                DOKU_INC.'lib/scripts/delay.js',
                 DOKU_INC.'lib/scripts/cookie.js',
                 DOKU_INC.'lib/scripts/script.js',
                 DOKU_INC.'lib/scripts/tw-sack.js',
-                DOKU_INC.'lib/scripts/ajax.js',
-             );
-    if($edit){
-        if($write){
-            $files[] = DOKU_INC.'lib/scripts/edit.js';
-            if($conf['spellchecker']){
-                $files[] = DOKU_INC.'lib/scripts/spellcheck.js';
-            }
-        }
-        $files[] = DOKU_INC.'lib/scripts/media.js';
-    }
-    $files[] = DOKU_TPLINC.'script.js';
+                DOKU_INC.'lib/scripts/qsearch.js',
+                DOKU_INC.'lib/scripts/tree.js',
+                DOKU_INC.'lib/scripts/index.js',
+                DOKU_INC.'lib/scripts/drag.js',
+                DOKU_INC.'lib/scripts/textselection.js',
+                DOKU_INC.'lib/scripts/toolbar.js',
+                DOKU_INC.'lib/scripts/edit.js',
+                DOKU_INC.'lib/scripts/editor.js',
+                DOKU_INC.'lib/scripts/locktimer.js',
+                DOKU_INC.'lib/scripts/linkwiz.js',
+                DOKU_INC.'lib/scripts/media.js',
+                DOKU_INC.'lib/scripts/compatibility.js',
+# disabled for FS#1958                DOKU_INC.'lib/scripts/hotkeys.js',
+                DOKU_INC.'lib/scripts/behaviour.js',
+                DOKU_INC.'lib/scripts/page.js',
+                tpl_incdir().'script.js',
+            );
 
-    // get possible plugin scripts
-    $plugins = js_pluginscripts();
+    // add possible plugin scripts and userscript
+    $files   = array_merge($files,js_pluginscripts());
+    if(isset($config_cascade['userscript']['default'])){
+        $files[] = $config_cascade['userscript']['default'];
+    }
+
+    $cache_files = array_merge($files, getConfigFiles('main'));
+    $cache_files[] = __FILE__;
 
     // check cache age & handle conditional request
-    header('Cache-Control: public, max-age=3600');
-    header('Pragma: public');
-    if(js_cacheok($cache,array_merge($files,$plugins))){
-        http_conditionalRequest(filemtime($cache));
-        if($conf['allowdebug']) header("X-CacheUsed: $cache");
-        readfile($cache);
-        return;
-    } else {
-        http_conditionalRequest(time());
-    }
+    // This may exit if a cache can be used
+    $cache_ok = $cache->useCache(array('files' => $cache_files));
+    http_cached($cache->cache, $cache_ok);
 
     // start output buffering and build the script
     ob_start();
 
     // add some global variables
     print "var DOKU_BASE   = '".DOKU_BASE."';";
-    print "var DOKU_TPL    = '".DOKU_TPL."';";
-
-    //FIXME: move thes into LANG
-    print "var alertText   = '".js_escape($lang['qb_alert'])."';";
-    print "var notSavedYet = '".js_escape($lang['notsavedyet'])."';";
-    print "var reallyDel   = '".js_escape($lang['del_confirm'])."';";
+    print "var DOKU_TPL    = '".tpl_basedir()."';";
+    // FIXME: Move those to JSINFO
+    print "var DOKU_UHN    = ".((int) useHeading('navigation')).";";
+    print "var DOKU_UHC    = ".((int) useHeading('content')).";";
 
     // load JS specific translations
     $json = new JSON();
+    $lang['js']['plugins'] = js_pluginstrings();
     echo 'LANG = '.$json->encode($lang['js']).";\n";
+
+    // load toolbar
+    toolbar_JSdefines('toolbar');
 
     // load files
     foreach($files as $file){
-        echo "\n\n/* XXXXXXXXXX begin of $file XXXXXXXXXX */\n\n";
+        $ismin = (substr($file,-7) == '.min.js');
+
+        echo "\n\n/* XXXXXXXXXX begin of ".str_replace(DOKU_INC, '', $file) ." XXXXXXXXXX */\n\n";
+        if($ismin) echo "\n/* BEGIN NOCOMPRESS */\n";
         js_load($file);
-        echo "\n\n/* XXXXXXXXXX end of $file XXXXXXXXXX */\n\n";
+        if($ismin) echo "\n/* END NOCOMPRESS */\n";
+        echo "\n\n/* XXXXXXXXXX end of " . str_replace(DOKU_INC, '', $file) . " XXXXXXXXXX */\n\n";
     }
 
     // init stuff
-    js_runonstart("ajax_qsearch.init('qsearch__in','qsearch__out')");
-    js_runonstart("addEvent(document,'click',closePopups)");
-    js_runonstart('addTocToggle()');
-
-    if($edit){
-        // size controls
-        js_runonstart("initSizeCtl('size__ctl','wiki__text')");
-
-        if($write){
-            require_once(DOKU_INC.'inc/toolbar.php');
-            toolbar_JSdefines('toolbar');
-            js_runonstart("initToolbar('tool__bar','wiki__text',toolbar)");
-
-            // add pageleave check
-            js_runonstart("initChangeCheck('".js_escape($lang['notsavedyet'])."')");
-
-            // add lock timer
-            js_runonstart("locktimer.init(".($conf['locktime'] - 60).",'".js_escape($lang['willexpire'])."',".$conf['usedraft'].")");
-
-            // load spell checker
-            if($conf['spellchecker']){
-                js_runonstart("ajax_spell.init('".
-                               js_escape($lang['spell_start'])."','".
-                               js_escape($lang['spell_stop'])."','".
-                               js_escape($lang['spell_wait'])."','".
-                               js_escape($lang['spell_noerr'])."','".
-                               js_escape($lang['spell_nosug'])."','".
-                               js_escape($lang['spell_change'])."')");
-            }
-        }
+    if($conf['locktime'] != 0){
+        js_runonstart("dw_locktimer.init(".($conf['locktime'] - 60).",".$conf['usedraft'].")");
     }
-
-    // load plugin scripts (suppress warnings for missing ones)
-    foreach($plugins as $plugin){
-        if (@file_exists($plugin)) {
-          echo "\n\n/* XXXXXXXXXX begin of $plugin XXXXXXXXXX */\n\n";
-          js_load($plugin);
-          echo "\n\n/* XXXXXXXXXX end of $plugin XXXXXXXXXX */\n\n";
-        }
-    }
-
-    // load user script
-    @readfile(DOKU_CONF.'userscript.js');
-
-    // add scroll event and tooltip rewriting
-    js_runonstart('updateAccessKeyTooltip()');
-    js_runonstart('scrollToMarker()');
-    js_runonstart('focusMarker()');
+    // init hotkeys - must have been done after init of toolbar
+# disabled for FS#1958    js_runonstart('initializeHotkeys()');
 
     // end output buffering and get contents
     $js = ob_get_contents();
@@ -156,11 +129,7 @@ function js_out(){
 
     $js .= "\n"; // https://bugzilla.mozilla.org/show_bug.cgi?id=316033
 
-    // save cache file
-    io_saveFile($cache,$js);
-
-    // finally send output
-    print $js;
+    http_cached_finish($cache->cache, $js);
 }
 
 /**
@@ -173,12 +142,12 @@ function js_load($file){
     static $loaded = array();
 
     $data = io_readFile($file);
-    while(preg_match('#/\*\s*DOKUWIKI:include(_once)?\s+([\w\./]+)\s*\*/#',$data,$match)){
+    while(preg_match('#/\*\s*DOKUWIKI:include(_once)?\s+([\w\.\-_/]+)\s*\*/#',$data,$match)){
         $ifile = $match[2];
 
         // is it a include_once?
         if($match[1]){
-            $base = basename($ifile);
+            $base = utf8_basename($ifile);
             if($loaded[$base]) continue;
             $loaded[$base] = true;
         }
@@ -192,33 +161,7 @@ function js_load($file){
         }
         $data  = str_replace($match[0],$idata,$data);
     }
-    echo $data;
-}
-
-/**
- * Checks if a JavaScript Cache file still is valid
- *
- * @author Andreas Gohr <andi@splitbrain.org>
- */
-function js_cacheok($cache,$files){
-    if($_REQUEST['purge']) return false; //support purge request
-
-    $ctime = @filemtime($cache);
-    if(!$ctime) return false; //There is no cache
-
-    // some additional files to check
-    $files[] = DOKU_CONF.'dokuwiki.php';
-    $files[] = DOKU_CONF.'local.php';
-    $files[] = DOKU_CONF.'userscript.js';
-    $files[] = __FILE__;
-
-    // now walk the files
-    foreach($files as $file){
-        if(@filemtime($file) > $ctime){
-            return false;
-        }
-    }
-    return true;
+    echo "$data\n";
 }
 
 /**
@@ -233,6 +176,34 @@ function js_pluginscripts(){
         $list[] = DOKU_PLUGIN."$p/script.js";
     }
     return $list;
+}
+
+/**
+ * Return an two-dimensional array with strings from the language file of each plugin.
+ *
+ * - $lang['js'] must be an array.
+ * - Nothing is returned for plugins without an entry for $lang['js']
+ *
+ * @author Gabriel Birke <birke@d-scribe.de>
+ */
+function js_pluginstrings()
+{
+    global $conf;
+    $pluginstrings = array();
+    $plugins = plugin_list();
+    foreach ($plugins as $p){
+        if (isset($lang)) unset($lang);
+        if (@file_exists(DOKU_PLUGIN."$p/lang/en/lang.php")) {
+            include DOKU_PLUGIN."$p/lang/en/lang.php";
+        }
+        if (isset($conf['lang']) && $conf['lang']!='en' && @file_exists(DOKU_PLUGIN."$p/lang/".$conf['lang']."/lang.php")) {
+            include DOKU_PLUGIN."$p/lang/".$conf['lang']."/lang.php";
+        }
+        if (isset($lang['js'])) {
+            $pluginstrings[$p] = $lang['js'];
+        }
+    }
+    return $pluginstrings;
 }
 
 /**
@@ -251,7 +222,7 @@ function js_escape($string){
  * @author Andreas Gohr <andi@splitbrain.org>
  */
 function js_runonstart($func){
-    echo "addInitEvent(function(){ $func; });".NL;
+    echo "jQuery(function(){ $func; });".NL;
 }
 
 /**
@@ -277,6 +248,10 @@ function js_compress($s){
     // items that don't need spaces next to them
     $chars = "^&|!+\-*\/%=\?:;,{}()<>% \t\n\r'\"[]";
 
+    $regex_starters = array("(", "=", "[", "," , ":", "!");
+
+    $whitespaces_chars = array(" ", "\t", "\n", "\r", "\0", "\x0B");
+
     while($i < $slen){
         // skip all "boring" characters.  This is either
         // reserved word (e.g. "for", "else", "if") or a
@@ -291,7 +266,18 @@ function js_compress($s){
         if($ch == '/' && $s{$i+1} == '*' && $s{$i+2} != '@'){
             $endC = strpos($s,'*/',$i+2);
             if($endC === false) trigger_error('Found invalid /*..*/ comment', E_USER_ERROR);
-            $i = $endC + 2;
+
+            // check if this is a NOCOMPRESS comment
+            if(substr($s, $i, $endC+2-$i) == '/* BEGIN NOCOMPRESS */'){
+                $endNC = strpos($s, '/* END NOCOMPRESS */', $endC+2);
+                if($endNC === false) trigger_error('Found invalid NOCOMPRESS comment', E_USER_ERROR);
+
+                // verbatim copy contents, trimming but putting it on its own line
+                $result .= "\n".trim(substr($s, $i + 22, $endNC - ($i + 22)))."\n"; // BEGIN comment = 22 chars
+                $i = $endNC + 20; // END comment = 20 chars
+            }else{
+                $i = $endC + 2;
+            }
             continue;
         }
 
@@ -307,18 +293,16 @@ function js_compress($s){
         if($ch == '/'){
             // rewind, skip white space
             $j = 1;
-            while($s{$i-$j} == ' '){
+            while(in_array($s{$i-$j}, $whitespaces_chars)){
                 $j = $j + 1;
             }
-            if( ($s{$i-$j} == '=') || ($s{$i-$j} == '(') ){
+            if( in_array($s{$i-$j}, $regex_starters) ){
                 // yes, this is an re
                 // now move forward and find the end of it
                 $j = 1;
                 while($s{$i+$j} != '/'){
-                    while( ($s{$i+$j} != '\\') && ($s{$i+$j} != '/')){
-                        $j = $j + 1;
-                    }
                     if($s{$i+$j} == '\\') $j = $j + 2;
+                    else $j++;
                 }
                 $result .= substr($s,$i,$j+1);
                 $i = $i + $j + 1;
@@ -336,7 +320,10 @@ function js_compress($s){
                     $j += 1;
                 }
             }
-            $result .= substr($s,$i,$j+1);
+            $string  = substr($s,$i,$j+1);
+            // remove multiline markers:
+            $string  = str_replace("\\\n",'',$string);
+            $result .= $string;
             $i = $i + $j + 1;
             continue;
         }
@@ -351,7 +338,10 @@ function js_compress($s){
                     $j += 1;
                 }
             }
-            $result .= substr($s,$i,$j+1);
+            $string = substr($s,$i,$j+1);
+            // remove multiline markers:
+            $string  = str_replace("\\\n",'',$string);
+            $result .= $string;
             $i = $i + $j + 1;
             continue;
         }
@@ -384,5 +374,4 @@ function js_compress($s){
     return trim($result);
 }
 
-//Setup VIM: ex: et ts=4 enc=utf-8 :
-?>
+//Setup VIM: ex: et ts=4 :

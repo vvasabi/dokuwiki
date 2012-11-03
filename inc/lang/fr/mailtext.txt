@@ -1,4 +1,4 @@
-Une page dans votre Wiki a été ajoutée ou modifiée. Voici les 
+Une page dans votre wiki a été ajoutée ou modifiée. Voici les
 détails :
 
 Date              : @DATE@
@@ -14,5 +14,5 @@ Utilisateur       : @USER@
 
 
 -- 
-Ce message a été généré par DokuWiki
+Ce courriel a été généré par DokuWiki
 @DOKUWIKIURL@

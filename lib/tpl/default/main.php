@@ -5,10 +5,7 @@
  * This is the template you need to change for the overall look
  * of DokuWiki.
  *
- * You should leave the doctype at the very top - It should
- * always be the very first line of a document.
- *
- * @link   http://wiki.splitbrain.org/wiki:tpl:templates
+ * @link   http://dokuwiki.org/templates
  * @author Andreas Gohr <andi@splitbrain.org>
  */
 
@@ -28,8 +25,7 @@ if (!defined('DOKU_INC')) die();
   </title>
 
   <?php tpl_metaheaders()?>
-
-  <link rel="shortcut icon" href="<?php echo DOKU_TPL?>images/favicon.ico" />
+  <?php echo tpl_favicon(array('favicon', 'mobile')) ?>
 
   <?php /*old includehook*/ @include(dirname(__FILE__).'/meta.html')?>
 </head>
@@ -43,10 +39,10 @@ if (!defined('DOKU_INC')) die();
 
     <div class="header">
       <div class="pagename">
-        [[<?php tpl_link(wl($ID,'do=backlink'),tpl_pagetitle($ID,true))?>]]
+        [[<?php tpl_link(wl($ID,'do=backlink'),tpl_pagetitle($ID,true),'title="'.$lang['btn_backlink'].'"')?>]]
       </div>
       <div class="logo">
-        <?php tpl_link(wl(),$conf['title'],'name="dokuwiki__top" id="dokuwiki__top" accesskey="h" title="[ALT+H]"')?>
+        <?php tpl_link(wl(),$conf['title'],'name="dokuwiki__top" id="dokuwiki__top" accesskey="h" title="[H]"')?>
       </div>
 
       <div class="clearer"></div>
@@ -62,7 +58,7 @@ if (!defined('DOKU_INC')) die();
 
       <div class="bar-right" id="bar__topright">
         <?php tpl_button('recent')?>
-        <?php tpl_searchform()?>&nbsp;
+        <?php tpl_searchform()?>&#160;
       </div>
 
       <div class="clearer"></div>
@@ -82,7 +78,7 @@ if (!defined('DOKU_INC')) die();
     <?php }?>
 
   </div>
-  <?php flush()?>
+  <?php tpl_flush()?>
 
   <?php /*old includehook*/ @include(dirname(__FILE__).'/pageheader.html')?>
 
@@ -92,9 +88,9 @@ if (!defined('DOKU_INC')) die();
     <!-- wikipage stop -->
   </div>
 
-  <div class="clearer">&nbsp;</div>
+  <div class="clearer"></div>
 
-  <?php flush()?>
+  <?php tpl_flush()?>
 
   <div class="stylefoot">
 
@@ -113,19 +109,23 @@ if (!defined('DOKU_INC')) die();
       <div class="bar-left" id="bar__bottomleft">
         <?php tpl_button('edit')?>
         <?php tpl_button('history')?>
+        <?php tpl_button('revert')?>
       </div>
       <div class="bar-right" id="bar__bottomright">
-        <?php tpl_button('subscription')?>
+        <?php tpl_button('subscribe')?>
+        <?php tpl_button('media')?>
         <?php tpl_button('admin')?>
         <?php tpl_button('profile')?>
         <?php tpl_button('login')?>
         <?php tpl_button('index')?>
-        <?php tpl_button('top')?>&nbsp;
+        <?php tpl_button('top')?>&#160;
       </div>
       <div class="clearer"></div>
     </div>
 
   </div>
+
+  <?php tpl_license(false);?>
 
 </div>
 <?php /*old includehook*/ @include(dirname(__FILE__).'/footer.html')?>

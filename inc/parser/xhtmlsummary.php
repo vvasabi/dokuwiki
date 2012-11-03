@@ -1,6 +1,5 @@
 <?php
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
-
+if(!defined('DOKU_INC')) die('meh.');
 require_once DOKU_INC . 'inc/parser/xhtml.php';
 
 /**
@@ -88,4 +87,4 @@ class Doku_Renderer_xhtmlsummary extends Doku_Renderer_xhtml {
 }
 
 
-//Setup VIM: ex: et ts=2 enc=utf-8 :
+//Setup VIM: ex: et ts=2 :

@@ -3,10 +3,6 @@
  * english language file
  */
 
-// settings must be present and set appropriately for the language
-$lang['encoding']   = 'utf-8';
-$lang['direction']  = 'ltr';
-
 // for admin plugins, the menu prompt to be displayed in the admin menu
 // if set here, the plugin doesn't need to override the getMenuText() method
 $lang['menu'] = 'Revert Manager';
@@ -24,4 +20,4 @@ $lang['revstop']  = 'Reversion process finished successfully.';
 $lang['note1']    = 'Note: this search is case sensitive';
 $lang['note2']    = 'Note: the page will be reverted to the last version not containing the given spam term <i>%s</i>.';
 
-//Setup VIM: ex: et ts=4 enc=utf-8 :
+//Setup VIM: ex: et ts=4 :

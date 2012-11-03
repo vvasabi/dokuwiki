@@ -8,9 +8,6 @@
 // must be run within Dokuwiki
 if(!defined('DOKU_INC')) die();
 
-if(!defined('DOKU_PLUGIN')) define('DOKU_PLUGIN',DOKU_INC.'lib/plugins/');
-require_once(DOKU_INC.'inc/plugin.php');
-
 /**
  * All DokuWiki plugins to extend the admin function
  * need to inherit from this class
@@ -41,5 +38,9 @@ class DokuWiki_Admin_Plugin extends DokuWiki_Plugin {
     function forAdminOnly() {
         return true;
     }
+
+    function getTOC(){
+        return array();
+    }
 }
-//Setup VIM: ex: et ts=4 enc=utf-8 :
+//Setup VIM: ex: et ts=4 :

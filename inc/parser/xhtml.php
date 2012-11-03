@@ -5,8 +5,7 @@
  * @author Harry Fuecks <hfuecks@gmail.com>
  * @author Andreas Gohr <andi@splitbrain.org>
  */
-
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
+if(!defined('DOKU_INC')) die('meh.');
 
 if ( !defined('DOKU_LF') ) {
     // Some whitespace to help View > Source
@@ -30,11 +29,50 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
     var $doc = '';        // will contain the whole document
     var $toc = array();   // will contain the Table of Contents
 
+    var $sectionedits = array(); // A stack of section edit data
 
     var $headers = array();
     var $footnotes = array();
-    var $lastsec = 0;
+    var $lastlevel = 0;
+    var $node = array(0,0,0,0,0);
     var $store = '';
+
+    var $_counter   = array(); // used as global counter, introduced for table classes
+    var $_codeblock = 0; // counts the code and file blocks, used to provide download links
+
+    /**
+     * Register a new edit section range
+     *
+     * @param $type  string The section type identifier
+     * @param $title string The section title
+     * @param $start int    The byte position for the edit start
+     * @return string A marker class for the starting HTML element
+     * @author Adrian Lang <lang@cosmocode.de>
+     */
+    public function startSectionEdit($start, $type, $title = null) {
+        static $lastsecid = 0;
+        $this->sectionedits[] = array(++$lastsecid, $start, $type, $title);
+        return 'sectionedit' . $lastsecid;
+    }
+
+    /**
+     * Finish an edit section range
+     *
+     * @param $end int The byte position for the edit end; null for the rest of
+                       the page
+     * @author Adrian Lang <lang@cosmocode.de>
+     */
+    public function finishSectionEdit($end = null) {
+        list($id, $start, $type, $title) = array_pop($this->sectionedits);
+        if (!is_null($end) && $end <= $start) {
+            return;
+        }
+        $this->doc .= "<!-- EDIT$id " . strtoupper($type) . ' ';
+        if (!is_null($title)) {
+            $this->doc .= '"' . str_replace('"', '', $title) . '" ';
+        }
+        $this->doc .= "[$start-" . (is_null($end) ? '' : $end) . '] -->';
+    }
 
     function getFormat(){
         return 'xhtml';
@@ -48,6 +86,17 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
     }
 
     function document_end() {
+        // Finish open section edits.
+        while (count($this->sectionedits) > 0) {
+            if ($this->sectionedits[count($this->sectionedits) - 1][1] <= 1) {
+                // If there is only one section, do not write a section edit
+                // marker.
+                array_pop($this->sectionedits);
+            } else {
+                $this->finishSectionEdit();
+            }
+        }
+
         if ( count ($this->footnotes) > 0 ) {
             $this->doc .= '<div class="footnotes">'.DOKU_LF;
 
@@ -60,8 +109,8 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
                     // open the footnote and set the anchor and backlink
                     $this->doc .= '<div class="fn">';
-                    $this->doc .= '<a href="#fnt__'.$id.'" id="fn__'.$id.'" name="fn__'.$id.'" class="fn_bot">';
-                    $this->doc .= $id.')</a> '.DOKU_LF;
+                    $this->doc .= '<sup><a href="#fnt__'.$id.'" id="fn__'.$id.'" class="fn_bot">';
+                    $this->doc .= $id.')</a></sup> '.DOKU_LF;
 
                     // get any other footnotes that use the same markup
                     $alt = array_keys($this->footnotes, "@@FNT$id");
@@ -69,8 +118,8 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
                     if (count($alt)) {
                       foreach ($alt as $ref) {
                         // set anchor and backlink for the other footnotes
-                        $this->doc .= ', <a href="#fnt__'.($ref+1).'" id="fn__'.($ref+1).'" name="fn__'.($ref+1).'" class="fn_bot">';
-                        $this->doc .= ($ref+1).')</a> '.DOKU_LF;
+                        $this->doc .= ', <sup><a href="#fnt__'.($ref+1).'" id="fn__'.($ref+1).'" class="fn_bot">';
+                        $this->doc .= ($ref+1).')</a></sup> '.DOKU_LF;
                       }
                     }
 
@@ -82,41 +131,15 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
             $this->doc .= '</div>'.DOKU_LF;
         }
 
-        // prepend the TOC
-        if($this->info['toc']){
-            $this->doc = $this->render_TOC($this->toc).$this->doc;
+        // Prepare the TOC
+        global $conf;
+        if($this->info['toc'] && is_array($this->toc) && $conf['tocminheads'] && count($this->toc) >= $conf['tocminheads']){
+            global $TOC;
+            $TOC = $this->toc;
         }
 
         // make sure there are no empty paragraphs
         $this->doc = preg_replace('#<p>\s*</p>#','',$this->doc);
-    }
-
-    /**
-     * Return the TOC rendered to XHTML
-     *
-     * @author Andreas Gohr <andi@splitbrain.org>
-     */
-    function render_TOC($toc=null){
-        if(is_null($toc) && is_array($this->toc)) $toc = $this->toc;
-
-        if(count($toc) < 3) return '';
-        global $lang;
-        $out  = '<div class="toc">'.DOKU_LF;
-        $out .= '<div class="tocheader toctoggle" id="toc__header">';
-        $out .= $lang['toc'];
-        $out .= '</div>'.DOKU_LF;
-        $out .= '<div id="toc__inside">'.DOKU_LF;
-        $out .= html_buildlist($toc,'toc',array(__CLASS__,'_tocitem'));
-        $out .= '</div>'.DOKU_LF.'</div>'.DOKU_LF;
-        return $out;
-    }
-
-    /**
-     * Callback for html_buildlist
-     */
-    function _tocitem($item){
-        return '<span class="li"><a href="#'.$item['hid'].'" class="toc">'.
-               Doku_Renderer_xhtml::_xmlEntities($item['title']).'</a></span>';
     }
 
     function toc_additem($id, $text, $level) {
@@ -124,45 +147,47 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
         //handle TOC
         if($level >= $conf['toptoclevel'] && $level <= $conf['maxtoclevel']){
-            // the TOC is one of our standard ul list arrays ;-)
-            $this->toc[] = array( 'hid'   => $id,
-                                  'title' => $text,
-                                  'type'  => 'ul',
-                                  'level' => $level-$conf['toptoclevel']+1);
+            $this->toc[] = html_mktocitem($id, $text, $level-$conf['toptoclevel']+1);
         }
     }
 
     function header($text, $level, $pos) {
+        global $conf;
+
+        if(!$text) return; //skip empty headlines
 
         $hid = $this->_headerToLink($text,true);
 
         //only add items within configured levels
         $this->toc_additem($hid, $text, $level);
 
-        // write the header
-        $this->doc .= DOKU_LF.'<h'.$level.'><a name="'.$hid.'" id="'.$hid.'">';
-        $this->doc .= $this->_xmlEntities($text);
-        $this->doc .= "</a></h$level>".DOKU_LF;
-    }
-
-     /**
-     * Section edit marker is replaced by an edit button when
-     * the page is editable. Replacement done in 'inc/html.php#html_secedit'
-     *
-     * @author Andreas Gohr <andi@splitbrain.org>
-     * @author Ben Coburn   <btcoburn@silicodon.net>
-     */
-    function section_edit($start, $end, $level, $name) {
-        global $conf;
-
-        if ($start!=-1 && $level<=$conf['maxseclevel']) {
-            $name = str_replace('"', '', $name);
-            $this->doc .= '<!-- SECTION "'.$name.'" ['.$start.'-'.(($end===0)?'':$end).'] -->';
+        // adjust $node to reflect hierarchy of levels
+        $this->node[$level-1]++;
+        if ($level < $this->lastlevel) {
+            for ($i = 0; $i < $this->lastlevel-$level; $i++) {
+                $this->node[$this->lastlevel-$i-1] = 0;
+            }
         }
+        $this->lastlevel = $level;
+
+        if ($level <= $conf['maxseclevel'] &&
+            count($this->sectionedits) > 0 &&
+            $this->sectionedits[count($this->sectionedits) - 1][2] === 'section') {
+            $this->finishSectionEdit($pos - 1);
+        }
+
+        // write the header
+        $this->doc .= DOKU_LF.'<h'.$level;
+        if ($level <= $conf['maxseclevel']) {
+            $this->doc .= ' class="' . $this->startSectionEdit($pos, 'section', $text) . '"';
+        }
+        $this->doc .= ' id="'.$hid.'">';
+        $this->doc .= $this->_xmlEntities($text);
+        $this->doc .= "</h$level>".DOKU_LF;
     }
 
     function section_open($level) {
-        $this->doc .= "<div class=\"level$level\">".DOKU_LF;
+        $this->doc .= '<div class="level' . $level . '">' . DOKU_LF;
     }
 
     function section_close() {
@@ -291,7 +316,7 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         }
 
         // output the footnote reference and link
-        $this->doc .= '<a href="#fn__'.$id.'" name="fnt__'.$id.'" id="fnt__'.$id.'" class="fn_top">'.$id.')</a>';
+        $this->doc .= '<sup><a href="#fn__'.$id.'" id="fnt__'.$id.'" class="fn_top">'.$id.')</a></sup>';
     }
 
     function listu_open() {
@@ -333,38 +358,48 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
     /**
      * Execute PHP code if allowed
      *
+     * @param  string   $text      PHP code that is either executed or printed
+     * @param  string   $wrapper   html element to wrap result if $conf['phpok'] is okff
+     *
      * @author Andreas Gohr <andi@splitbrain.org>
      */
-    function php($text) {
-        ob_start();
-        eval($text);
-        $this->doc .= ob_get_contents();
-        ob_end_clean();
+    function php($text, $wrapper='code') {
+        global $conf;
+
+        if($conf['phpok']){
+          ob_start();
+          eval($text);
+          $this->doc .= ob_get_contents();
+          ob_end_clean();
+        } else {
+          $this->doc .= p_xhtml_cached_geshi($text, 'php', $wrapper);
+        }
     }
 
     function phpblock($text) {
-        $this->php($text);
+        $this->php($text, 'pre');
     }
 
     /**
      * Insert HTML if allowed
      *
+     * @param  string   $text      html text
+     * @param  string   $wrapper   html element to wrap result if $conf['htmlok'] is okff
+     *
      * @author Andreas Gohr <andi@splitbrain.org>
      */
-    function html($text) {
-        $this->doc .= $text;
+    function html($text, $wrapper='code') {
+        global $conf;
+
+        if($conf['htmlok']){
+          $this->doc .= $text;
+        } else {
+          $this->doc .= p_xhtml_cached_geshi($text, 'html4strict', $wrapper);
+        }
     }
 
     function htmlblock($text) {
-        $this->html($text);
-    }
-
-    function preformatted($text) {
-        $this->doc .= '<pre class="code">' . $this->_xmlEntities($text) . '</pre>'. DOKU_LF;
-    }
-
-    function file($text) {
-        $this->doc .= '<pre class="file">' . $this->_xmlEntities($text). '</pre>'. DOKU_LF;
+        $this->html($text, 'pre');
     }
 
     function quote_open() {
@@ -375,24 +410,61 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         $this->doc .= '</div></blockquote>'.DOKU_LF;
     }
 
+    function preformatted($text) {
+        $this->doc .= '<pre class="code">' . trim($this->_xmlEntities($text),"\n\r") . '</pre>'. DOKU_LF;
+    }
+
+    function file($text, $language=null, $filename=null) {
+        $this->_highlight('file',$text,$language,$filename);
+    }
+
+    function code($text, $language=null, $filename=null) {
+        $this->_highlight('code',$text,$language,$filename);
+    }
+
     /**
-     * Callback for code text
-     *
-     * Uses GeSHi to highlight language syntax
+     * Use GeSHi to highlight language syntax in code and file blocks
      *
      * @author Andreas Gohr <andi@splitbrain.org>
      */
-    function code($text, $language = NULL) {
+    function _highlight($type, $text, $language=null, $filename=null) {
         global $conf;
+        global $ID;
+        global $lang;
+
+        if($filename){
+            // add icon
+            list($ext) = mimetype($filename,false);
+            $class = preg_replace('/[^_\-a-z0-9]+/i','_',$ext);
+            $class = 'mediafile mf_'.$class;
+
+            $this->doc .= '<dl class="'.$type.'">'.DOKU_LF;
+            $this->doc .= '<dt><a href="'.exportlink($ID,'code',array('codeblock'=>$this->_codeblock)).'" title="'.$lang['download'].'" class="'.$class.'">';
+            $this->doc .= hsc($filename);
+            $this->doc .= '</a></dt>'.DOKU_LF.'<dd>';
+        }
+
+        if ($text{0} == "\n") {
+            $text = substr($text, 1);
+        }
+        if (substr($text, -1) == "\n") {
+            $text = substr($text, 0, -1);
+        }
 
         if ( is_null($language) ) {
-            $this->preformatted($text);
+            $this->doc .= '<pre class="'.$type.'">'.$this->_xmlEntities($text).'</pre>'.DOKU_LF;
         } else {
-            //strip leading and trailing blank line
-            $text = preg_replace('/^\s*?\n/','',$text);
-            $text = preg_replace('/\s*?\n$/','',$text);
-            $this->doc .= p_xhtml_cached_geshi($text, $language);
+            $class = 'code'; //we always need the code class to make the syntax highlighting apply
+            if($type != 'code') $class .= ' '.$type;
+
+            $this->doc .= "<pre class=\"$class $language\">".p_xhtml_cached_geshi($text, $language, '').'</pre>'.DOKU_LF;
         }
+
+        if($filename){
+            $this->doc .= '</dd></dl>'.DOKU_LF;
+        }
+
+        $this->_codeblock++;
     }
 
     function acronym($acronym) {
@@ -401,8 +473,8 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
             $title = $this->_xmlEntities($this->acronyms[$acronym]);
 
-            $this->doc .= '<acronym title="'.$title
-                .'">'.$this->_xmlEntities($acronym).'</acronym>';
+            $this->doc .= '<abbr title="'.$title
+                .'">'.$this->_xmlEntities($acronym).'</abbr>';
 
         } else {
             $this->doc .= $this->_xmlEntities($acronym);
@@ -413,7 +485,7 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         if ( array_key_exists($smiley, $this->smileys) ) {
             $title = $this->_xmlEntities($this->smileys[$smiley]);
             $this->doc .= '<img src="'.DOKU_BASE.'lib/images/smileys/'.$this->smileys[$smiley].
-                '" class="middle" alt="'.
+                '" class="icon" alt="'.
                     $this->_xmlEntities($smiley).'" />';
         } else {
             $this->doc .= $this->_xmlEntities($smiley);
@@ -479,7 +551,7 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         global $ID;
         $name  = $this->_getLinkTitle($name, $hash, $isImage);
         $hash  = $this->_headerToLink($hash);
-        $title = $ID.' &crarr;';
+        $title = $ID.' ↵';
         $this->doc .= '<a href="#'.$hash.'" title="'.$title.'" class="wikilink1">';
         $this->doc .= $name;
         $this->doc .= '</a>';
@@ -488,25 +560,44 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
     /**
      * Render an internal Wiki Link
      *
-     * $search and $returnonly are not for the renderer but are used
+     * $search,$returnonly & $linktype are not for the renderer but are used
      * elsewhere - no need to implement them in other renderers
      *
      * @author Andreas Gohr <andi@splitbrain.org>
      */
-    function internallink($id, $name = NULL, $search=NULL,$returnonly=false) {
+    function internallink($id, $name = NULL, $search=NULL,$returnonly=false,$linktype='content') {
         global $conf;
         global $ID;
+        global $INFO;
+
+        $params = '';
+        $parts = explode('?', $id, 2);
+        if (count($parts) === 2) {
+            $id = $parts[0];
+            $params = $parts[1];
+        }
+
+        // For empty $id we need to know the current $ID
+        // We need this check because _simpleTitle needs
+        // correct $id and resolve_pageid() use cleanID($id)
+        // (some things could be lost)
+        if ($id === '') {
+            $id = $ID;
+        }
+
         // default name is based on $id as given
         $default = $this->_simpleTitle($id);
 
         // now first resolve and clean up the $id
         resolve_pageid(getNS($ID),$id,$exists);
-        $name = $this->_getLinkTitle($name, $default, $isImage, $id);
+
+        $name = $this->_getLinkTitle($name, $default, $isImage, $id, $linktype);
         if ( !$isImage ) {
             if ( $exists ) {
                 $class='wikilink1';
             } else {
                 $class='wikilink2';
+                $link['rel']='nofollow';
             }
         } else {
             $class='media';
@@ -522,19 +613,24 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         $link['pre']    = '';
         $link['suf']    = '';
         // highlight link to current page
-        if ($id == $ID) {
+        if ($id == $INFO['id']) {
             $link['pre']    = '<span class="curid">';
             $link['suf']    = '</span>';
         }
         $link['more']   = '';
         $link['class']  = $class;
-        $link['url']    = wl($id);
+        $link['url']    = wl($id, $params);
         $link['name']   = $name;
         $link['title']  = $id;
         //add search string
         if($search){
-            ($conf['userewrite']) ? $link['url'].='?s=' : $link['url'].='&amp;s=';
-            $link['url'] .= rawurlencode($search);
+            ($conf['userewrite']) ? $link['url'].='?' : $link['url'].='&amp;';
+            if(is_array($search)){
+                $search = array_map('rawurlencode',$search);
+                $link['url'] .= 's[]='.join('&amp;s[]=',$search);
+            }else{
+                $link['url'] .= 's='.rawurlencode($search);
+            }
         }
 
         //keep hash
@@ -553,6 +649,19 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
         $name = $this->_getLinkTitle($name, $url, $isImage);
 
+        // url might be an attack vector, only allow registered protocols
+        if(is_null($this->schemes)) $this->schemes = getSchemes();
+        list($scheme) = explode('://',$url);
+        $scheme = strtolower($scheme);
+        if(!in_array($scheme,$this->schemes)) $url = '';
+
+        // is there still an URL?
+        if(!$url){
+            $this->doc .= $name;
+            return;
+        }
+
+        // set class
         if ( !$isImage ) {
             $class='urlextern';
         } else {
@@ -589,7 +698,7 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         $link['name']   = $this->_getLinkTitle($name, $wikiUri, $isImage);
 
         //get interwiki URL
-        $url = $this-> _resolveInterWiki($wikiName,$wikiUri);
+        $url = $this->_resolveInterWiki($wikiName,$wikiUri);
 
         if ( !$isImage ) {
             $class = preg_replace('/[^_\-a-z0-9]+/i','_',$wikiName);
@@ -620,11 +729,6 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         $link['pre']    = '';
         $link['suf']   = '';
         $link['style']  = '';
-        //Display error on browsers other than IE
-        $link['more'] = 'onclick="if(document.all == null){alert(\''.
-                        str_replace('\\\\n','\\n',addslashes($lang['nosmblinks'])).
-                        '\');}" onkeypress="if(document.all == null){alert(\''.
-                        str_replace('\\\\n','\\n',addslashes($lang['nosmblinks'])).'\');}"';
 
         $link['name'] = $this->_getLinkTitle($name, $url, $isImage);
         if ( !$isImage ) {
@@ -655,9 +759,9 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
         $name = $this->_getLinkTitle($name, '', $isImage);
         if ( !$isImage ) {
-            $link['class']='mail JSnocheck';
+            $link['class']='mail';
         } else {
-            $link['class']='media JSnocheck';
+            $link['class']='media';
         }
 
         $address = $this->_xmlEntities($address);
@@ -667,9 +771,6 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         if(empty($name)){
             $name = $address;
         }
-#elseif($isImage{
-#            $name = $this->_xmlEntities($name);
-#        }
 
         if($conf['mailguard'] == 'visible') $address = rawurlencode($address);
 
@@ -683,70 +784,62 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
     function internalmedia ($src, $title=NULL, $align=NULL, $width=NULL,
                             $height=NULL, $cache=NULL, $linking=NULL) {
-        global $conf;
         global $ID;
+        list($src,$hash) = explode('#',$src,2);
         resolve_mediaid(getNS($ID),$src, $exists);
 
-        $link = array();
-        $link['class']  = 'media';
-        $link['style']  = '';
-        $link['pre']    = '';
-        $link['suf']    = '';
-        $link['more']   = '';
-        $link['target'] = $conf['target']['media'];
         $noLink = false;
+        $render = ($linking == 'linkonly') ? false : true;
+        $link = $this->_getMediaLinkConf($src, $title, $align, $width, $height, $cache, $render);
 
-        $link['title']  = $this->_xmlEntities($src);
-        list($ext,$mime) = mimetype($src);
-        if(substr($mime,0,5) == 'image'){
-             $link['url'] = ml($src,array('id'=>$ID,'cache'=>$cache),($linking=='direct'));
-         }elseif($mime == 'application/x-shockwave-flash'){
-             // don't link flash movies
-             $noLink = true;
-         }else{
-             // add file icons
-             $class = preg_replace('/[^_\-a-z0-9]+/i','_',$ext);
-             $link['class'] .= ' mediafile mf_'.$class;
-             $link['url'] = ml($src,array('id'=>$ID,'cache'=>$cache),true);
-         }
-         $link['name']   = $this->_media ($src, $title, $align, $width, $height, $cache);
+        list($ext,$mime,$dl) = mimetype($src,false);
+        if(substr($mime,0,5) == 'image' && $render){
+            $link['url'] = ml($src,array('id'=>$ID,'cache'=>$cache),($linking=='direct'));
+        }elseif($mime == 'application/x-shockwave-flash' && $render){
+            // don't link flash movies
+            $noLink = true;
+        }else{
+            // add file icons
+            $class = preg_replace('/[^_\-a-z0-9]+/i','_',$ext);
+            $link['class'] .= ' mediafile mf_'.$class;
+            $link['url'] = ml($src,array('id'=>$ID,'cache'=>$cache),true);
+        }
 
-         //output formatted
-         if ($linking == 'nolink' || $noLink) $this->doc .= $link['name'];
-         else $this->doc .= $this->_formatLink($link);
+        if($hash) $link['url'] .= '#'.$hash;
+
+        //markup non existing files
+        if (!$exists) {
+            $link['class'] .= ' wikilink2';
+        }
+
+        //output formatted
+        if ($linking == 'nolink' || $noLink) $this->doc .= $link['name'];
+        else $this->doc .= $this->_formatLink($link);
     }
 
-    /**
-     * @todo don't add link for flash
-     */
     function externalmedia ($src, $title=NULL, $align=NULL, $width=NULL,
                             $height=NULL, $cache=NULL, $linking=NULL) {
-        global $conf;
-
-        $link = array();
-        $link['class']  = 'media';
-        $link['style']  = '';
-        $link['pre']    = '';
-        $link['suf']    = '';
-        $link['more']   = '';
-        $link['target'] = $conf['target']['media'];
-
-        $link['title']  = $this->_xmlEntities($src);
-        $link['url']    = ml($src,array('cache'=>$cache));
-        $link['name']   = $this->_media ($src, $title, $align, $width, $height, $cache);
+        list($src,$hash) = explode('#',$src,2);
         $noLink = false;
+        $render = ($linking == 'linkonly') ? false : true;
+        $link = $this->_getMediaLinkConf($src, $title, $align, $width, $height, $cache, $render);
 
-        list($ext,$mime) = mimetype($src);
-        if(substr($mime,0,5) == 'image'){
-             // link only jpeg images
-             // if ($ext != 'jpg' && $ext != 'jpeg') $noLink = true;
-        }elseif($mime == 'application/x-shockwave-flash'){
-             // don't link flash movies
-             $noLink = true;
+        $link['url']    = ml($src,array('cache'=>$cache));
+
+        list($ext,$mime,$dl) = mimetype($src,false);
+        if(substr($mime,0,5) == 'image' && $render){
+            // link only jpeg images
+            // if ($ext != 'jpg' && $ext != 'jpeg') $noLink = true;
+        }elseif($mime == 'application/x-shockwave-flash' && $render){
+            // don't link flash movies
+            $noLink = true;
         }else{
-             // add file icons
-             $link['class'] .= ' mediafile mf_'.$ext;
-         }
+            // add file icons
+            $class = preg_replace('/[^_\-a-z0-9]+/i','_',$ext);
+            $link['class'] .= ' mediafile mf_'.$class;
+        }
+
+        if($hash) $link['url'] .= '#'.$hash;
 
         //output formatted
         if ($linking == 'nolink' || $noLink) $this->doc .= $link['name'];
@@ -764,7 +857,7 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
 
         require_once(DOKU_INC.'inc/FeedParser.php');
         $feed = new FeedParser();
-        $feed->feed_url($url);
+        $feed->set_feed_url($url);
 
         //disable warning while fetching
         if (!defined('DOKU_E_LEVEL')) { $elvl = error_reporting(E_ERROR); }
@@ -789,8 +882,16 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
             for ($x = $start; $x != $end; $x += $mod) {
                 $item = $feed->get_item($x);
                 $this->doc .= '<li><div class="li">';
-                $this->externallink($item->get_permalink(),
-                                    $item->get_title());
+                // support feeds without links
+                $lnkurl = $item->get_permalink();
+                if($lnkurl){
+                    // title is escaped by SimplePie, we unescape here because it
+                    // is escaped again in externallink() FS#1705
+                    $this->externallink($item->get_permalink(),
+                                        htmlspecialchars_decode($item->get_title()));
+                }else{
+                    $this->doc .= ' '.$item->get_title();
+                }
                 if($params['author']){
                     $author = $item->get_author(0);
                     if($author){
@@ -800,11 +901,11 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
                     }
                 }
                 if($params['date']){
-                    $this->doc .= ' ('.$item->get_date($conf['dformat']).')';
+                    $this->doc .= ' ('.$item->get_local_date($conf['dformat']).')';
                 }
                 if($params['details']){
                     $this->doc .= '<div class="detail">';
-                    if($htmlok){
+                    if($conf['htmlok']){
                         $this->doc .= $item->get_description();
                     }else{
                         $this->doc .= strip_tags($item->get_description());
@@ -827,29 +928,49 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
     }
 
     // $numrows not yet implemented
-    function table_open($maxcols = NULL, $numrows = NULL){
-        $this->doc .= '<table class="inline">'.DOKU_LF;
+    function table_open($maxcols = null, $numrows = null, $pos = null){
+        global $lang;
+        // initialize the row counter used for classes
+        $this->_counter['row_counter'] = 0;
+        $class = 'table';
+        if ($pos !== null) {
+            $class .= ' ' . $this->startSectionEdit($pos, 'table');
+        }
+        $this->doc .= '<div class="' . $class . '"><table class="inline">' .
+                      DOKU_LF;
     }
 
-    function table_close(){
-        $this->doc .= '</table>'.DOKU_LF;
+    function table_close($pos = null){
+        $this->doc .= '</table></div>'.DOKU_LF;
+        if ($pos !== null) {
+            $this->finishSectionEdit($pos);
+        }
     }
 
     function tablerow_open(){
-        $this->doc .= DOKU_TAB . '<tr>' . DOKU_LF . DOKU_TAB . DOKU_TAB;
+        // initialize the cell counter used for classes
+        $this->_counter['cell_counter'] = 0;
+        $class = 'row' . $this->_counter['row_counter']++;
+        $this->doc .= DOKU_TAB . '<tr class="'.$class.'">' . DOKU_LF . DOKU_TAB . DOKU_TAB;
     }
 
     function tablerow_close(){
         $this->doc .= DOKU_LF . DOKU_TAB . '</tr>' . DOKU_LF;
     }
 
-    function tableheader_open($colspan = 1, $align = NULL){
-        $this->doc .= '<th';
+    function tableheader_open($colspan = 1, $align = NULL, $rowspan = 1){
+        $class = 'class="col' . $this->_counter['cell_counter']++;
         if ( !is_null($align) ) {
-            $this->doc .= ' class="'.$align.'align"';
+            $class .= ' '.$align.'align';
         }
+        $class .= '"';
+        $this->doc .= '<th ' . $class;
         if ( $colspan > 1 ) {
+            $this->_counter['cell_counter'] += $colspan-1;
             $this->doc .= ' colspan="'.$colspan.'"';
+        }
+        if ( $rowspan > 1 ) {
+            $this->doc .= ' rowspan="'.$rowspan.'"';
         }
         $this->doc .= '>';
     }
@@ -858,13 +979,19 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         $this->doc .= '</th>';
     }
 
-    function tablecell_open($colspan = 1, $align = NULL){
-        $this->doc .= '<td';
+    function tablecell_open($colspan = 1, $align = NULL, $rowspan = 1){
+        $class = 'class="col' . $this->_counter['cell_counter']++;
         if ( !is_null($align) ) {
-            $this->doc .= ' class="'.$align.'align"';
+            $class .= ' '.$align.'align';
         }
+        $class .= '"';
+        $this->doc .= '<td '.$class;
         if ( $colspan > 1 ) {
+            $this->_counter['cell_counter'] += $colspan-1;
             $this->doc .= ' colspan="'.$colspan.'"';
+        }
+        if ( $rowspan > 1 ) {
+            $this->doc .= ' rowspan="'.$rowspan.'"';
         }
         $this->doc .= '>';
     }
@@ -904,6 +1031,7 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
         if(!empty($link['target'])) $ret .= ' target="'.$link['target'].'"';
         if(!empty($link['title']))  $ret .= ' title="'.$link['title'].'"';
         if(!empty($link['style']))  $ret .= ' style="'.$link['style'].'"';
+        if(!empty($link['rel']))    $ret .= ' rel="'.$link['rel'].'"';
         if(!empty($link['more']))   $ret .= ' '.$link['more'];
         $ret .= '>';
         $ret .= $link['name'];
@@ -918,30 +1046,40 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
      * @author Andreas Gohr <andi@splitbrain.org>
      */
     function _media ($src, $title=NULL, $align=NULL, $width=NULL,
-                      $height=NULL, $cache=NULL) {
+                      $height=NULL, $cache=NULL, $render = true) {
 
         $ret = '';
 
-        list($ext,$mime) = mimetype($src);
+        list($ext,$mime,$dl) = mimetype($src);
         if(substr($mime,0,5) == 'image'){
+            // first get the $title
+            if (!is_null($title)) {
+                $title  = $this->_xmlEntities($title);
+            }elseif($ext == 'jpg' || $ext == 'jpeg'){
+                //try to use the caption from IPTC/EXIF
+                require_once(DOKU_INC.'inc/JpegMeta.php');
+                $jpeg =new JpegMeta(mediaFN($src));
+                if($jpeg !== false) $cap = $jpeg->getTitle();
+                if($cap){
+                    $title = $this->_xmlEntities($cap);
+                }
+            }
+            if (!$render) {
+                // if the picture is not supposed to be rendered
+                // return the title of the picture
+                if (!$title) {
+                    // just show the sourcename
+                    $title = $this->_xmlEntities(utf8_basename(noNS($src)));
+                }
+                return $title;
+            }
             //add image tag
             $ret .= '<img src="'.ml($src,array('w'=>$width,'h'=>$height,'cache'=>$cache)).'"';
             $ret .= ' class="media'.$align.'"';
 
-            if (!is_null($title)) {
-                $ret .= ' title="'.$this->_xmlEntities($title).'"';
-                $ret .= ' alt="'.$this->_xmlEntities($title).'"';
-            }elseif($ext == 'jpg' || $ext == 'jpeg'){
-                //try to use the caption from IPTC/EXIF
-                require_once(DOKU_INC.'inc/JpegMeta.php');
-                $jpeg =& new JpegMeta(mediaFN($src));
-                if($jpeg !== false) $cap = $jpeg->getTitle();
-                if($cap){
-                    $ret .= ' title="'.$this->_xmlEntities($cap).'"';
-                    $ret .= ' alt="'.$this->_xmlEntities($cap).'"';
-                }else{
-                    $ret .= ' alt=""';
-                }
+            if ($title) {
+                $ret .= ' title="' . $title . '"';
+                $ret .= ' alt="'   . $title .'"';
             }else{
                 $ret .= ' alt=""';
             }
@@ -955,27 +1093,31 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
             $ret .= ' />';
 
         }elseif($mime == 'application/x-shockwave-flash'){
-            $ret .= '<object classid="clsid:D27CDB6E-AE6D-11cf-96B8-444553540000"'.
-                    ' codebase="http://download.macromedia.com/pub/shockwave/cabs/flash/swflash.cab#version=6,0,40,0"';
-            if ( !is_null($width) ) $ret .= ' width="'.$this->_xmlEntities($width).'"';
-            if ( !is_null($height) ) $ret .= ' height="'.$this->_xmlEntities($height).'"';
-            $ret .= '>'.DOKU_LF;
-            $ret .= '<param name="movie" value="'.ml($src).'" />'.DOKU_LF;
-            $ret .= '<param name="quality" value="high" />'.DOKU_LF;
-            $ret .= '<embed src="'.ml($src).'"'.
-                    ' quality="high"';
-            if ( !is_null($width) ) $ret .= ' width="'.$this->_xmlEntities($width).'"';
-            if ( !is_null($height) ) $ret .= ' height="'.$this->_xmlEntities($height).'"';
-            $ret .= ' type="application/x-shockwave-flash"'.
-                    ' pluginspage="http://www.macromedia.com/go/getflashplayer"></embed>'.DOKU_LF;
-            $ret .= '</object>'.DOKU_LF;
+            if (!$render) {
+                // if the flash is not supposed to be rendered
+                // return the title of the flash
+                if (!$title) {
+                    // just show the sourcename
+                    $title = utf8_basename(noNS($src));
+                }
+                return $this->_xmlEntities($title);
+            }
 
+            $att = array();
+            $att['class'] = "media$align";
+            if($align == 'right') $att['align'] = 'right';
+            if($align == 'left')  $att['align'] = 'left';
+            $ret .= html_flashobject(ml($src,array('cache'=>$cache),true,'&'),$width,$height,
+                                     array('quality' => 'high'),
+                                     null,
+                                     $att,
+                                     $this->_xmlEntities($title));
         }elseif($title){
             // well at least we have a title to display
             $ret .= $this->_xmlEntities($title);
         }else{
             // just show the sourcename
-            $ret .= $this->_xmlEntities(basename(noNS($src)));
+            $ret .= $this->_xmlEntities(utf8_basename(noNS($src)));
         }
 
         return $ret;
@@ -993,21 +1135,12 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
      * @author Andreas Gohr <andi@splitbrain.org>
      */
     function _headerToLink($title,$create=false) {
-        $title = str_replace(':','',cleanID($title));
-        $title = ltrim($title,'0123456789._-');
-        if(empty($title)) $title='section';
-
         if($create){
-            // make sure tiles are unique
-            $num = '';
-            while(in_array($title.$num,$this->headers)){
-                ($num) ? $num++ : $num = 1;
-            }
-            $title = $title.$num;
-            $this->headers[] = $title;
+            return sectionID($title,$this->headers);
+        }else{
+            $check = false;
+            return sectionID($title,$check);
         }
-
-        return $title;
     }
 
     /**
@@ -1015,23 +1148,23 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
      *
      * @author Harry Fuecks <hfuecks@gmail.com>
      */
-    function _getLinkTitle($title, $default, & $isImage, $id=NULL) {
+    function _getLinkTitle($title, $default, & $isImage, $id=NULL, $linktype='content') {
         global $conf;
 
         $isImage = false;
-        if ( is_null($title) ) {
-            if ($conf['useheading'] && $id) {
-                $heading = p_get_first_heading($id,true);
+        if ( is_array($title) ) {
+            $isImage = true;
+            return $this->_imageTitle($title);
+        } elseif ( is_null($title) || trim($title)=='') {
+            if (useHeading($linktype) && $id) {
+                $heading = p_get_first_heading($id);
                 if ($heading) {
                     return $this->_xmlEntities($heading);
                 }
             }
             return $this->_xmlEntities($default);
-        } else if ( is_string($title) ) {
+        } else {
             return $this->_xmlEntities($title);
-        } else if ( is_array($title) ) {
-            $isImage = true;
-            return $this->_imageTitle($title);
         }
     }
 
@@ -1042,6 +1175,15 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
      * @author Andreas Gohr <andi@splitbrain.org>
      */
     function _imageTitle($img) {
+        global $ID;
+
+        // some fixes on $img['src']
+        // see internalmedia() and externalmedia()
+        list($img['src'],$hash) = explode('#',$img['src'],2);
+        if ($img['type'] == 'internalmedia') {
+            resolve_mediaid(getNS($ID),$img['src'],$exists);
+        }
+
         return $this->_media($img['src'],
                               $img['title'],
                               $img['align'],
@@ -1049,6 +1191,40 @@ class Doku_Renderer_xhtml extends Doku_Renderer {
                               $img['height'],
                               $img['cache']);
     }
+
+    /**
+     * _getMediaLinkConf is a helperfunction to internalmedia() and externalmedia()
+     * which returns a basic link to a media.
+     *
+     * @author Pierre Spring <pierre.spring@liip.ch>
+     * @param string $src
+     * @param string $title
+     * @param string $align
+     * @param string $width
+     * @param string $height
+     * @param string $cache
+     * @param string $render
+     * @access protected
+     * @return array
+     */
+    function _getMediaLinkConf($src, $title, $align, $width, $height, $cache, $render)
+    {
+        global $conf;
+
+        $link = array();
+        $link['class']  = 'media';
+        $link['style']  = '';
+        $link['pre']    = '';
+        $link['suf']    = '';
+        $link['more']   = '';
+        $link['target'] = $conf['target']['media'];
+        $link['title']  = $this->_xmlEntities($src);
+        $link['name']   = $this->_media($src, $title, $align, $width, $height, $cache, $render);
+
+        return $link;
+    }
+
+
 }
 
-//Setup VIM: ex: et ts=4 enc=utf-8 :
+//Setup VIM: ex: et ts=4 :

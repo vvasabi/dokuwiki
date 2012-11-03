@@ -136,6 +136,7 @@ class IXR_Message {
     var $_value;
     var $_currentTag;
     var $_currentTagContents;
+    var $_lastseen;
     // The XML parser
     var $_parser;
     function IXR_Message ($message) {
@@ -144,6 +145,13 @@ class IXR_Message {
     function parse() {
         // first remove the XML declaration
         $this->message = preg_replace('/<\?xml(.*)?\?'.'>/', '', $this->message);
+        // workaround for a bug in PHP/libxml2, see http://bugs.php.net/bug.php?id=45996
+        $this->message = str_replace('&lt;', '&#60;', $this->message);
+        $this->message = str_replace('&gt;', '&#62;', $this->message);
+        $this->message = str_replace('&amp;', '&#38;', $this->message);
+        $this->message = str_replace('&apos;', '&#39;', $this->message);
+        $this->message = str_replace('&quot;', '&#34;', $this->message);
+        $this->message = str_replace("\x0b", ' ', $this->message); //vertical tab
         if (trim($this->message) == '') {
             return false;
         }
@@ -170,6 +178,7 @@ class IXR_Message {
     }
     function tag_open($parser, $tag, $attr) {
         $this->currentTag = $tag;
+        $this->_currentTagContents = '';
         switch($tag) {
             case 'methodCall':
             case 'methodResponse':
@@ -186,6 +195,7 @@ class IXR_Message {
                 $this->_arraystructs[] = array();
                 break;
         }
+        $this->_lastseen = $tag;
     }
     function cdata($parser, $cdata) {
         $this->_currentTagContents .= $cdata;
@@ -205,7 +215,7 @@ class IXR_Message {
                 $valueFlag = true;
                 break;
             case 'string':
-                $value = (string)trim($this->_currentTagContents);
+                $value = (string)$this->_currentTagContents;
                 $this->_currentTagContents = '';
                 $valueFlag = true;
                 break;
@@ -217,7 +227,7 @@ class IXR_Message {
                 break;
             case 'value':
                 // "If no type is indicated, the type is string."
-                if (trim($this->_currentTagContents) != '') {
+                if($this->_lastseen == 'value'){
                     $value = (string)$this->_currentTagContents;
                     $this->_currentTagContents = '';
                     $valueFlag = true;
@@ -272,6 +282,7 @@ class IXR_Message {
                 $this->params[] = $value;
             }
         }
+        $this->_lastseen = $tag;
     }
 }
 
@@ -291,11 +302,12 @@ class IXR_Server {
     }
     function serve($data = false) {
         if (!$data) {
-            global $HTTP_RAW_POST_DATA;
-            if (!$HTTP_RAW_POST_DATA) {
-               die('XML-RPC server accepts POST requests only.');
+
+            $postData = trim(http_get_raw_post_data());
+            if (!$postData) {
+                die('XML-RPC server accepts POST requests only.');
             }
-            $data = $HTTP_RAW_POST_DATA;
+            $data = $postData;
         }
         $this->message = new IXR_Message($data);
         if (!$this->message->parse()) {
@@ -335,14 +347,16 @@ EOD;
         $method = $this->callbacks[$methodname];
         // Perform the callback and send the response
 
-# Removed for DokuWiki to have a more consistent interface
-#        if (count($args) == 1) {
-#            // If only one paramater just send that instead of the whole array
-#            $args = $args[0];
-#        }
+        # Removed for DokuWiki to have a more consistent interface
+        #        if (count($args) == 1) {
+        #            // If only one paramater just send that instead of the whole array
+        #            $args = $args[0];
+        #        }
 
+        # Adjusted for DokuWiki to use call_user_func_array
 
-# Adjusted for DokuWiki to use call_user_func_array
+        // args need to be an array
+        $args = (array) $args;
 
         // Are we dealing with a function or a method?
         if (substr($method, 0, 5) == 'this:') {
@@ -354,6 +368,14 @@ EOD;
             // Call the method
             #$result = $this->$method($args);
             $result = call_user_func_array(array(&$this,$method),$args);
+        } elseif (substr($method, 0, 7) == 'plugin:') {
+            list($pluginname, $callback) = explode(':', substr($method, 7), 2);
+            if(!plugin_isdisabled($pluginname)) {
+                $plugin = plugin_load('action', $pluginname);
+                return call_user_func_array(array($plugin, $callback), $args);
+            } else {
+                return new IXR_Error(-99999, 'server error');
+            }
         } else {
             // It's a function - does it exist?
             if (!function_exists($method)) {
@@ -374,13 +396,8 @@ EOD;
         $this->output($error->getXml());
     }
     function output($xml) {
-        $xml = '<?xml version="1.0"?>'."\n".$xml;
-        $length = strlen($xml);
-        header('Connection: close');
-        header('Content-Length: '.$length);
-        header('Content-Type: text/xml');
-        header('Date: '.date('r'));
-        echo $xml;
+        header('Content-Type: text/xml; charset=utf-8');
+        echo '<?xml version="1.0"?>', "\n", $xml;
         exit;
     }
     function hasMethod($method) {
@@ -423,7 +440,7 @@ EOD;
             $method = $call['methodName'];
             $params = $call['params'];
             if ($method == 'system.multicall') {
-                $result = new IXR_Error(-32600, 'Recursive calls to system.multicall are forbidden');
+                $result = new IXR_Error(-32800, 'Recursive calls to system.multicall are forbidden');
             } else {
                 $result = $this->call($method, $params);
             }
@@ -470,91 +487,58 @@ EOD;
     }
 }
 
-# FIXME use DokuHTTPClient here
-class IXR_Client {
-    var $server;
-    var $port;
-    var $path;
-    var $useragent;
-    var $response;
+/**
+ * Changed for DokuWiki to use DokuHTTPClient
+ *
+ * This should be compatible to the original class, but uses DokuWiki's
+ * HTTP client library which will respect proxy settings
+ *
+ * Because the XMLRPC client is not used in DokuWiki currently this is completely
+ * untested
+ */
+class IXR_Client extends DokuHTTPClient {
+    var $posturl = '';
     var $message = false;
-    var $debug = false;
-    // Storage place for an error message
-    var $error = false;
+    var $xmlerror = false;
+
     function IXR_Client($server, $path = false, $port = 80) {
+        parent::__construct();
         if (!$path) {
             // Assume we have been given a URL instead
-            $bits = parse_url($server);
-            $this->server = $bits['host'];
-            $this->port = isset($bits['port']) ? $bits['port'] : 80;
-            $this->path = isset($bits['path']) ? $bits['path'] : '/';
-            // Make absolutely sure we have a path
-            if (!$this->path) {
-                $this->path = '/';
-            }
-        } else {
-            $this->server = $server;
-            $this->path = $path;
-            $this->port = $port;
+            $this->posturl = $server;
+        }else{
+            $this->posturl = 'http://'.$server.':'.$port.$path;
         }
-        $this->useragent = 'The Incutio XML-RPC PHP Library';
     }
+
     function query() {
         $args = func_get_args();
         $method = array_shift($args);
         $request = new IXR_Request($method, $args);
-        $length = $request->getLength();
         $xml = $request->getXml();
-        $r = "\r\n";
-        $request  = "POST {$this->path} HTTP/1.0$r";
-        $request .= "Host: {$this->server}$r";
-        $request .= "Content-Type: text/xml$r";
-        $request .= "User-Agent: {$this->useragent}$r";
-        $request .= "Content-length: {$length}$r$r";
-        $request .= $xml;
-        // Now send the request
-        if ($this->debug) {
-            echo '<pre>'.htmlspecialchars($request)."\n</pre>\n\n";
-        }
-        $fp = @fsockopen($this->server, $this->port);
-        if (!$fp) {
-            $this->error = new IXR_Error(-32300, 'transport error - could not open socket');
+
+        $this->headers['Content-Type'] = 'text/xml';
+        if(!$this->sendRequest($this->posturl,$xml,'POST')){
+            $this->xmlerror = new IXR_Error(-32300, 'transport error - '.$this->error);
             return false;
         }
-        fputs($fp, $request);
-        $contents = '';
-        $gotFirstLine = false;
-        $gettingHeaders = true;
-        while (!feof($fp)) {
-            $line = fgets($fp, 4096);
-            if (!$gotFirstLine) {
-                // Check line for '200'
-                if (strstr($line, '200') === false) {
-                    $this->error = new IXR_Error(-32300, 'transport error - HTTP status code was not 200');
-                    return false;
-                }
-                $gotFirstLine = true;
-            }
-            if (trim($line) == '') {
-                $gettingHeaders = false;
-            }
-            if (!$gettingHeaders) {
-                $contents .= trim($line)."\n";
-            }
+
+        // Check HTTP Response code
+        if($this->status < 200 || $this->status > 206){
+            $this->xmlerror = new IXR_Error(-32300, 'transport error - HTTP status '.$this->status);
+            return false;
         }
-        if ($this->debug) {
-            echo '<pre>'.htmlspecialchars($contents)."\n</pre>\n\n";
-        }
+
         // Now parse what we've got back
-        $this->message = new IXR_Message($contents);
+        $this->message = new IXR_Message($this->resp_body);
         if (!$this->message->parse()) {
             // XML error
-            $this->error = new IXR_Error(-32700, 'parse error. not well formed');
+            $this->xmlerror = new IXR_Error(-32700, 'parse error. not well formed');
             return false;
         }
         // Is the message a fault?
         if ($this->message->messageType == 'fault') {
-            $this->error = new IXR_Error($this->message->faultCode, $this->message->faultString);
+            $this->xmlerror = new IXR_Error($this->message->faultCode, $this->message->faultString);
             return false;
         }
         // Message must be OK
@@ -565,13 +549,13 @@ class IXR_Client {
         return $this->message->params[0];
     }
     function isError() {
-        return (is_object($this->error));
+        return (is_object($this->xmlerror));
     }
     function getErrorCode() {
-        return $this->error->code;
+        return $this->xmlerror->code;
     }
     function getErrorMessage() {
-        return $this->error->message;
+        return $this->xmlerror->message;
     }
 }
 
@@ -624,20 +608,22 @@ class IXR_Date {
         }
     }
     function parseTimestamp($timestamp) {
-        $this->year = date('Y', $timestamp);
-        $this->month = date('Y', $timestamp);
-        $this->day = date('Y', $timestamp);
-        $this->hour = date('H', $timestamp);
-        $this->minute = date('i', $timestamp);
-        $this->second = date('s', $timestamp);
+        $this->year = gmdate('Y', $timestamp);
+        $this->month = gmdate('m', $timestamp);
+        $this->day = gmdate('d', $timestamp);
+        $this->hour = gmdate('H', $timestamp);
+        $this->minute = gmdate('i', $timestamp);
+        $this->second = gmdate('s', $timestamp);
     }
     function parseIso($iso) {
-        $this->year = substr($iso, 0, 4);
-        $this->month = substr($iso, 4, 2);
-        $this->day = substr($iso, 6, 2);
-        $this->hour = substr($iso, 9, 2);
-        $this->minute = substr($iso, 12, 2);
-        $this->second = substr($iso, 15, 2);
+        if(preg_match('/^(\d\d\d\d)-?(\d\d)-?(\d\d)([T ](\d\d):(\d\d)(:(\d\d))?)?/',$iso,$match)){
+            $this->year   = (int) $match[1];
+            $this->month  = (int) $match[2];
+            $this->day    = (int) $match[3];
+            $this->hour   = (int) $match[5];
+            $this->minute = (int) $match[6];
+            $this->second = (int) $match[8];
+        }
     }
     function getIso() {
         return $this->year.$this->month.$this->day.'T'.$this->hour.':'.$this->minute.':'.$this->second;
@@ -646,7 +632,7 @@ class IXR_Date {
         return '<dateTime.iso8601>'.$this->getIso().'</dateTime.iso8601>';
     }
     function getTimestamp() {
-        return mktime($this->hour, $this->minute, $this->second, $this->month, $this->day, $this->year);
+        return gmmktime($this->hour, $this->minute, $this->second, $this->month, $this->day, $this->year);
     }
 }
 
@@ -714,8 +700,9 @@ class IXR_IntrospectionServer extends IXR_Server {
         $method = $this->callbacks[$methodname];
         $signature = $this->signatures[$methodname];
         $returnType = array_shift($signature);
-        // Check the number of arguments
-        if (count($args) != count($signature)) {
+        // Check the number of arguments. Check only, if the minimum count of parameters is specified. More parameters are possible.
+        // This is a hack to allow optional parameters...
+        if (count($args) < count($signature)) {
             // print 'Num of args: '.count($args).' Num in signature: '.count($signature);
             return new IXR_Error(-32602, 'server error. wrong number of method parameters');
         }
@@ -811,7 +798,7 @@ class IXR_ClientMulticall extends IXR_Client {
     var $calls = array();
     function IXR_ClientMulticall($server, $path = false, $port = 80) {
         parent::IXR_Client($server, $path, $port);
-        $this->useragent = 'The Incutio XML-RPC PHP Library (multicall client)';
+        //$this->useragent = 'The Incutio XML-RPC PHP Library (multicall client)';
     }
     function addCall() {
         $args = func_get_args();
@@ -828,4 +815,3 @@ class IXR_ClientMulticall extends IXR_Client {
     }
 }
 
-?>

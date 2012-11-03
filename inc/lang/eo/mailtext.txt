@@ -1,16 +1,15 @@
-Paĝo en via DokuVikio estis ŝanĝita aŭ aldonita. Jen detaloj:
+Paĝo en via DokuVikio ŝanĝiĝis aŭ aldoniĝis. Jen detaloj:
 
-Dato              : @DATE@
-Krozilo           : @BROWSER@
-IP-adreso         : @IPADDRESS@
-RetNodo           : @HOSTNAME@
-Antaŭa revizio    : @OLDPAGE@
-Nova revizio      : @NEWPAGE@
-Bulteno de ŝanĝoj : @SUMMARY@
-Uzanto            : @USER@
+Dato: @DATE@
+Foliumilo: @BROWSER@
+IP-adreso: @IPADDRESS@
+RetNodo: @HOSTNAME@
+Antaŭa revizio: @OLDPAGE@
+Nova revizio: @NEWPAGE@
+Bulteno de ŝanĝoj: @SUMMARY@
+Uzanto: @USER@
 
 @DIFF@
 
 -- 
-Tiu ĉi mesaĝo estis kreata de DokuWiki, kiu lokiĝas ĉi tie:
-@DOKUWIKIURL@
+Tiu ĉi mesaĝo kreiĝis de DokuWiki, kiu lokiĝas ĉe @DOKUWIKIURL@

@@ -1,14 +1,14 @@
-En fil blev uploaded til din DokuWiki. Her er detaljerne:
+En fil blev overfÃ¸ret til din DokuWiki. Her er detaljerne:
 
 Fil         : @MEDIA@
 Dato        : @DATE@
 Browser     : @BROWSER@
 IP-adresse  : @IPADDRESS@
-Værtsnavn   : @HOSTNAME@
-Størrelse   : @SIZE@
+VÃ¦rtsnavn   : @HOSTNAME@
+StÃ¸rrelse   : @SIZE@
 MIME Type   : @MIME@
 Bruger      : @USER@
 
---
-Denne e-mail blev genereret af DokuWiki på
+-- 
+Denne e-mail blev genereret af DokuWiki pÃ¥
 @DOKUWIKIURL@

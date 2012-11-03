@@ -8,7 +8,7 @@
  * @author     Andreas Gohr <andi@splitbrain.org>
  */
 
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
+if(!defined('DOKU_INC')) define('DOKU_INC',dirname(__FILE__).'/../../');
 if(!defined('NOSESSION')) define('NOSESSION',true); // we do not use a session or authentication here (better caching)
 if(!defined('NL')) define('NL',"\n");
 require_once(DOKU_INC.'inc/init.php');
@@ -16,9 +16,9 @@ require_once(DOKU_INC.'inc/init.php');
 // try to be clever about the favicon location
 if(file_exists(DOKU_INC.'favicon.ico')){
     $ico = DOKU_URL.'favicon.ico';
-}elseif(file_exists(DOKU_TPLINC.'images/favicon.ico')){
+}elseif(file_exists(tpl_incdir().'images/favicon.ico')){
     $ico = DOKU_URL.'lib/tpl/'.$conf['template'].'/images/favicon.ico';
-}elseif(file_exists(DOKU_TPLINC.'favicon.ico')){
+}elseif(file_exists(tpl_incdir().'favicon.ico')){
     $ico = DOKU_URL.'lib/tpl/'.$conf['template'].'/favicon.ico';
 }else{
     $ico = DOKU_URL.'lib/tpl/default/images/favicon.ico';
@@ -35,4 +35,4 @@ echo '  <Url type="application/x-suggestions+json" template="'.
         DOKU_URL.'lib/exe/ajax.php?call=suggestions&amp;q={searchTerms}" />'.NL;
 echo '</OpenSearchDescription>'.NL;
 
-//Setup VIM: ex: et ts=4 enc=utf-8 :
+//Setup VIM: ex: et ts=4 :

@@ -1,13 +1,15 @@
 <?php
 /**
- *  Dokuwiki installation assistance
+ * Dokuwiki installation assistance
  *
- *  @author      Chris Smith <chris@jalakai.co.uk>
+ * @author      Chris Smith <chris@jalakai.co.uk>
  */
 
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__)).'/');
+if(!defined('DOKU_INC')) define('DOKU_INC',dirname(__FILE__).'/');
 if(!defined('DOKU_CONF')) define('DOKU_CONF',DOKU_INC.'conf/');
 if(!defined('DOKU_LOCAL')) define('DOKU_LOCAL',DOKU_INC.'conf/');
+
+require_once(DOKU_INC.'inc/PassHash.class.php');
 
 // check for error reporting override or set error reporting to sane values
 if (!defined('DOKU_E_LEVEL')) { error_reporting(E_ALL ^ E_NOTICE); }
@@ -22,13 +24,15 @@ if (get_magic_quotes_gpc() && !defined('MAGIC_QUOTES_STRIPPED')) {
     @ini_set('magic_quotes_gpc', 0);
     define('MAGIC_QUOTES_STRIPPED',1);
 }
-@set_magic_quotes_runtime(0);
+if (function_exists('set_magic_quotes_runtime')) @set_magic_quotes_runtime(0);
 @ini_set('magic_quotes_sybase',0);
 
 // language strings
 require_once(DOKU_INC.'inc/lang/en/lang.php');
-$LC = preg_replace('/[^a-z\-]+/','',$_REQUEST['l']);
-if(!$LC) $LC = 'en';
+if(isset($_REQUEST['l']) && !is_array($_REQUEST['l'])) {
+    $LC = preg_replace('/[^a-z\-]+/','',$_REQUEST['l']);
+}
+if(empty($LC)) $LC = 'en';
 if($LC && $LC != 'en' ) {
     require_once(DOKU_INC.'inc/lang/'.$LC.'/lang.php');
 }
@@ -43,19 +47,24 @@ $dokuwiki_hash = array(
     '2006-11-06'   => 'b3a8af76845977c2000d85d6990dd72b',
     '2007-05-24'   => 'd80f2740c84c4a6a791fd3c7a353536f',
     '2007-06-26'   => 'b3ca19c7a654823144119980be73cd77',
+    '2008-05-04'   => '1e5c42eac3219d9e21927c39e3240aad',
+    '2009-02-14'   => 'ec8c04210732a14fdfce0f7f6eead865',
+    '2009-12-25'   => '993c4b2b385643efe5abf8e7010e11f4',
+    '2010-11-07'   => '7921d48195f4db21b8ead6d9bea801b8',
+    '2011-05-25'   => '4241865472edb6fa14a1227721008072',
+    '2011-11-10'   => 'b46ff19a7587966ac4df61cbab1b8b31',
+    '2012-01-25'   => '72c083c73608fc43c586901fd5dabb74',
+    '2012-09-10'   => 'eb0b3fc90056fbc12bac6f49f7764df3'
 );
-
 
 
 // begin output
 header('Content-Type: text/html; charset=utf-8');
 ?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
- "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="<?php echo $LC?>"
- lang="<?php echo $LC?>" dir="<?php echo $lang['direction']?>">
+<!DOCTYPE html>
+<html lang="<?php echo $LC?>" dir="<?php echo $lang['direction']?>">
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta charset="utf-8" />
     <title><?php echo $lang['i_installer']?></title>
     <style type="text/css">
         body { width: 90%; margin: 0 auto; font: 84% Verdana, Helvetica, Arial, sans-serif; }
@@ -65,8 +74,9 @@ header('Content-Type: text/html; charset=utf-8');
         fieldset { border: none }
         label { display: block; margin-top: 0.5em; }
         select.text, input.text { width: 30em; margin: 0 0.5em; }
+        a {text-decoration: none}
     </style>
-    <script type="text/javascript" language="javascript">
+    <script type="text/javascript">
         function acltoggle(){
             var cb = document.getElementById('acl');
             var fs = document.getElementById('acldep');
@@ -86,7 +96,7 @@ header('Content-Type: text/html; charset=utf-8');
 </head>
 <body style="">
     <h1 style="float:left">
-        <img src="http://wiki.splitbrain.org/_media/wiki:dokuwiki-64.png"
+        <img src="lib/exe/fetch.php?media=wiki:dokuwiki-128.png&amp;w=64"
              style="vertical-align: middle;" alt="" />
         <?php echo $lang['i_installer']?>
     </h1>
@@ -105,6 +115,10 @@ header('Content-Type: text/html; charset=utf-8');
                 print "</div>\n";
             }
         ?>
+        <a style="background: transparent url(data/security.png) left top no-repeat;
+                  display: block; width:380px; height:73px; border:none; clear:both;"
+           target="_blank"
+           href="http://www.dokuwiki.org/security#web_access_security"></a>
     </div>
 
     <div style="float: left; width: 58%;">
@@ -116,24 +130,24 @@ header('Content-Type: text/html; charset=utf-8');
             }elseif(!check_configs()){
                 echo '<p>'.$lang['i_modified'].'</p>';
                 print_errors();
-            }elseif($_REQUEST['submit']){
-                if(!check_data($_REQUEST['d'])){
-                    print_errors();
-                    print_form($_REQUEST['d']);
-                }elseif(!store_data($_REQUEST['d'])){
+            }elseif(check_data($_REQUEST['d'])){
+                // check_data has sanitized all input parameters
+                if(!store_data($_REQUEST['d'])){
                     echo '<p>'.$lang['i_failure'].'</p>';
                     print_errors();
                 }else{
                     echo '<p>'.$lang['i_success'].'</p>';
                 }
             }else{
+                print_errors();
                 print_form($_REQUEST['d']);
             }
         ?>
     </div>
 
+
 <div style="clear: both">
-  <a href="http://wiki.splitbrain.org/wiki:dokuwiki"><img src="lib/tpl/default/images/button-dw.png" alt="driven by DokuWiki" /></a>
+  <a href="http://dokuwiki.org/"><img src="lib/tpl/default/images/button-dw.png" alt="driven by DokuWiki" /></a>
   <a href="http://www.php.net"><img src="lib/tpl/default/images/button-php.gif" alt="powered by PHP" /></a>
 </div>
 </body>
@@ -146,6 +160,8 @@ header('Content-Type: text/html; charset=utf-8');
 function print_form($d){
     global $lang;
     global $LC;
+
+    include(DOKU_CONF.'license.php');
 
     if(!is_array($d)) $d = array();
     $d = array_map('htmlspecialchars',$d);
@@ -162,7 +178,7 @@ function print_form($d){
 
         <fieldset style="margin-top: 1em;">
             <label for="acl">
-            <input type="checkbox" name="d[acl]" id="acl" <?php echo(($d['acl'] ? 'checked="checked"' : ''));?> />
+            <input type="checkbox" name="d[acl]" id="acl" <?php echo(($d['acl'] ? ' checked="checked"' : ''));?> />
             <?php echo $lang['i_enableacl']?></label>
 
             <fieldset id="acldep">
@@ -187,7 +203,24 @@ function print_form($d){
                     <option value="1" <?php echo ($d['policy'] == 1)?'selected="selected"':'' ?>><?php echo $lang['i_pol1']?></option>
                     <option value="2" <?php echo ($d['policy'] == 2)?'selected="selected"':'' ?>><?php echo $lang['i_pol2']?></option>
                 </select>
+
             </fieldset>
+        </fieldset>
+
+        <fieldset>
+            <p><?php echo $lang['i_license']?></p>
+            <?php
+            array_unshift($license,array('name' => 'None', 'url'=>''));
+            if(empty($d['license'])) $d['license'] = 'cc-by-sa';
+            foreach($license as $key => $lic){
+                echo '<label for="lic_'.$key.'">';
+                echo '<input type="radio" name="d[license]" value="'.htmlspecialchars($key).'" id="lic_'.$key.'"'.
+                     (($d['license'] == $key)?' checked="checked"':'').'>';
+                echo htmlspecialchars($lic['name']);
+                if($lic['url']) echo ' <a href="'.$lic['url'].'" target="_blank"><sup>[?]</sup></a>';
+                echo '</label>';
+            }
+            ?>
         </fieldset>
 
     </fieldset>
@@ -199,14 +232,16 @@ function print_form($d){
 }
 
 function print_retry() {
-  global $lang;
-?>
+    global $lang;
+    global $LC;
+    ?>
     <form action="" method="get">
       <fieldset>
+        <input type="hidden" name="l" value="<?php echo $LC ?>" />
         <input class="button" type="submit" value="<?php echo $lang['i_retry'];?>" />
       </fieldset>
     </form>
-<?php
+    <?php
 }
 
 /**
@@ -215,41 +250,65 @@ function print_retry() {
  * @author Andreas Gohr
  */
 function check_data(&$d){
+    static $form_default = array(
+        'title'     => '',
+        'acl'       => '1',
+        'superuser' => '',
+        'fullname'  => '',
+        'email'     => '',
+        'password'  => '',
+        'confirm'   => '',
+        'policy'    => '0',
+        'license'   => 'cc-by-sa'
+    );
     global $lang;
     global $error;
 
+    if(!is_array($d)) $d = array();
+    foreach($d as $k => $v) {
+        if(is_array($v))
+            unset($d[$k]);
+        else
+            $d[$k] = (string)$v;
+    }
+
     //autolowercase the username
-    $d['superuser'] = strtolower($d['superuser']);
+    $d['superuser'] = isset($d['superuser']) ? strtolower($d['superuser']) : "";
 
-    $ok = true;
+    $ok = false;
 
-    // check input
-    if(empty($d['title'])){
-        $error[] = sprintf($lang['i_badval'],$lang['i_wikiname']);
-        $ok      = false;
+    if(isset($_REQUEST['submit'])) {
+        $ok = true;
+
+        // check input
+        if(empty($d['title'])){
+            $error[] = sprintf($lang['i_badval'],$lang['i_wikiname']);
+            $ok      = false;
+        }
+        if(isset($d['acl'])){
+            if(!preg_match('/^[a-z0-9_]+$/',$d['superuser'])){
+                $error[] = sprintf($lang['i_badval'],$lang['i_superuser']);
+                $ok      = false;
+            }
+            if(empty($d['password'])){
+                $error[] = sprintf($lang['i_badval'],$lang['pass']);
+                $ok      = false;
+            }
+            elseif(!isset($d['confirm']) || $d['confirm'] != $d['password']){
+                $error[] = sprintf($lang['i_badval'],$lang['passchk']);
+                $ok      = false;
+            }
+            if(empty($d['fullname']) || strstr($d['fullname'],':')){
+                $error[] = sprintf($lang['i_badval'],$lang['fullname']);
+                $ok      = false;
+            }
+            if(empty($d['email']) || strstr($d['email'],':') || !strstr($d['email'],'@')){
+                $error[] = sprintf($lang['i_badval'],$lang['email']);
+                $ok      = false;
+            }
+        }
     }
-    if($d['acl']){
-        if(!preg_match('/^[a-z1-9_]+$/',$d['superuser'])){
-            $error[] = sprintf($lang['i_badval'],$lang['i_superuser']);
-            $ok      = false;
-        }
-        if(empty($d['password'])){
-            $error[] = sprintf($lang['i_badval'],$lang['pass']);
-            $ok      = false;
-        }
-        if($d['confirm'] != $d['password']){
-            $error[] = sprintf($lang['i_badval'],$lang['passchk']);
-            $ok      = false;
-        }
-        if(empty($d['fullname']) || strstr($d['fullname'],':')){
-            $error[] = sprintf($lang['i_badval'],$lang['fullname']);
-            $ok      = false;
-        }
-        if(empty($d['email']) || strstr($d['email'],':') || !strstr($d['email'],'@')){
-            $error[] = sprintf($lang['i_badval'],$lang['email']);
-            $ok      = false;
-        }
-    }
+    $d = array_merge($form_default, $d);
     return $ok;
 }
 
@@ -264,7 +323,7 @@ function store_data($d){
     $d['policy'] = (int) $d['policy'];
 
     // create local.php
-    $now    = date('r');
+    $now    = gmdate('r');
     $output = <<<EOT
 <?php
 /**
@@ -276,17 +335,21 @@ function store_data($d){
 EOT;
     $output .= '$conf[\'title\'] = \''.addslashes($d['title'])."';\n";
     $output .= '$conf[\'lang\'] = \''.addslashes($LC)."';\n";
+    $output .= '$conf[\'license\'] = \''.addslashes($d['license'])."';\n";
     if($d['acl']){
         $output .= '$conf[\'useacl\'] = 1'.";\n";
         $output .= "\$conf['superuser'] = '@admin';\n";
     }
     $ok = $ok && fileWrite(DOKU_LOCAL.'local.php',$output);
 
-
     if ($d['acl']) {
+        // hash the password
+        $phash = new PassHash();
+        $pass = $phash->hash_smd5($d['password']);
+
         // create users.auth.php
-        // --- user:MD5password:Real Name:email:groups,comma,seperated
-        $output = join(":",array($d['superuser'], md5($d['password']), $d['fullname'], $d['email'], 'admin,user'));
+        // --- user:SMD5password:Real Name:email:groups,comma,seperated
+        $output = join(":",array($d['superuser'], $pass, $d['fullname'], $d['email'], 'admin,user'));
         $output = @file_get_contents(DOKU_CONF.'users.auth.php.dist')."\n$output\n";
         $ok = $ok && fileWrite(DOKU_LOCAL.'users.auth.php', $output);
 
@@ -356,7 +419,6 @@ function check_configs(){
         'auth'  => DOKU_LOCAL.'acl.auth.php'
     );
 
-
     // main dokuwiki config file (conf/dokuwiki.php) must not have been modified
     $installation_hash = md5(preg_replace("/(\015\012)|(\015)/","\012",
                              @file_get_contents(DOKU_CONF.'dokuwiki.php')));
@@ -367,7 +429,7 @@ function check_configs(){
 
     // configs shouldn't exist
     foreach ($config_files as $file) {
-        if (@file_exists($file)) {
+        if (@file_exists($file) && filesize($file)) {
             $file    = str_replace($_SERVER['DOCUMENT_ROOT'],'{DOCUMENT_ROOT}/', $file);
             $error[] = sprintf($lang['i_confexists'],$file);
             $ok      = false;
@@ -387,14 +449,18 @@ function check_permissions(){
     global $lang;
 
     $dirs = array(
-        'conf'      => DOKU_LOCAL,
-        'data'      => DOKU_INC.'data',
-        'pages'     => DOKU_INC.'data/pages',
-        'attic'     => DOKU_INC.'data/attic',
-        'media'     => DOKU_INC.'data/media',
-        'meta'      => DOKU_INC.'data/meta',
-        'cache'     => DOKU_INC.'data/cache',
-        'locks'     => DOKU_INC.'data/locks',
+        'conf'        => DOKU_LOCAL,
+        'data'        => DOKU_INC.'data',
+        'pages'       => DOKU_INC.'data/pages',
+        'attic'       => DOKU_INC.'data/attic',
+        'media'       => DOKU_INC.'data/media',
+        'media_attic' => DOKU_INC.'data/media_attic',
+        'media_meta'  => DOKU_INC.'data/media_meta',
+        'meta'        => DOKU_INC.'data/meta',
+        'cache'       => DOKU_INC.'data/cache',
+        'locks'       => DOKU_INC.'data/locks',
+        'index'       => DOKU_INC.'data/index',
+        'tmp'         => DOKU_INC.'data/tmp'
     );
 
     $ok = true;
@@ -418,21 +484,22 @@ function check_functions(){
     global $lang;
     $ok = true;
 
-    if(version_compare(phpversion(),'4.3.3','<')){
-        $error[] = sprintf($lang['i_phpver'],phpversion(),'4.3.3');
+    if(version_compare(phpversion(),'5.1.2','<')){
+        $error[] = sprintf($lang['i_phpver'],phpversion(),'5.1.2');
         $ok = false;
     }
 
-    $funcs = explode(' ','addslashes basename call_user_func chmod copy fgets '.
+    $funcs = explode(' ','addslashes call_user_func chmod copy fgets '.
                          'file file_exists fseek flush filesize ftell fopen '.
                          'glob header ignore_user_abort ini_get mail mkdir '.
                          'ob_start opendir parse_ini_file readfile realpath '.
                          'rename rmdir serialize session_start unlink usleep '.
-                         'preg_replace');
+                         'preg_replace file_get_contents htmlspecialchars_decode '.
+                         'spl_autoload_register stream_select fsockopen');
 
     if (!function_exists('mb_substr')) {
-      $funcs[] = 'utf8_encode';
-      $funcs[] = 'utf8_decode';
+        $funcs[] = 'utf8_encode';
+        $funcs[] = 'utf8_decode';
     }
 
     foreach($funcs as $func){
@@ -467,7 +534,6 @@ function langsel(){
     closedir($dh);
     sort($langs);
 
-
     echo '<form action="">';
     echo $lang['i_chooselang'];
     echo ': <select name="l" onchange="submit()">';
@@ -481,17 +547,19 @@ function langsel(){
 }
 
 /**
- * Print gloabl error array
+ * Print global error array
  *
  * @author Andreas Gohr <andi@splitbrain.org>
  */
 function print_errors(){
     global $error;
-    echo '<ul>';
-    foreach ($error as $err){
-        echo "<li>$err</li>";
+    if(!empty($error)) {
+        echo '<ul>';
+        foreach ($error as $err){
+            echo "<li>$err</li>";
+        }
+        echo '</ul>';
     }
-    echo '</ul>';
 }
 
 /**
@@ -500,12 +568,12 @@ function print_errors(){
  * @author Andreas Gohr <andi@splitbrain.org>
  */
 function remove_magic_quotes(&$array) {
-  foreach (array_keys($array) as $key) {
-    if (is_array($array[$key])) {
-      remove_magic_quotes($array[$key]);
-    }else {
-      $array[$key] = stripslashes($array[$key]);
+    foreach (array_keys($array) as $key) {
+        if (is_array($array[$key])) {
+            remove_magic_quotes($array[$key]);
+        }else {
+            $array[$key] = stripslashes($array[$key]);
+        }
     }
-  }
 }
 

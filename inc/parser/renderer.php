@@ -5,9 +5,7 @@
  * @author Harry Fuecks <hfuecks@gmail.com>
  * @author Andreas Gohr <andi@splitbrain.org>
  */
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../../').'/');
-
-require_once DOKU_INC . 'inc/parser/renderer.php';
+if(!defined('DOKU_INC')) die('meh.');
 require_once DOKU_INC . 'inc/plugin.php';
 require_once DOKU_INC . 'inc/pluginutils.php';
 
@@ -22,12 +20,18 @@ class Doku_Renderer extends DokuWiki_Plugin {
         'toc'   => true, // render the TOC?
     );
 
+    var $doc = '';
+
     // keep some config options
     var $acronyms = array();
     var $smileys = array();
     var $badwords = array();
     var $entities = array();
     var $interwiki = array();
+
+    // allows renderer to be used again, clean out any per-use values
+    function reset() {
+    }
 
     function nocache() {
         $this->info['cache'] = false;
@@ -44,6 +48,15 @@ class Doku_Renderer extends DokuWiki_Plugin {
      */
     function getFormat(){
         trigger_error('getFormat() not implemented in '.get_class($this), E_USER_WARNING);
+    }
+
+    /**
+     * Allow the plugin to prevent DokuWiki from reusing an instance
+     *
+     * @return bool   false if the plugin has to be instantiated
+     */
+    function isSingleton() {
+        return false;
     }
 
 
@@ -63,7 +76,9 @@ class Doku_Renderer extends DokuWiki_Plugin {
 
       foreach ( $instructions as $instruction ) {
         // execute the callback against ourself
-        call_user_func_array(array(&$this, $instruction[0]),$instruction[1]);
+        if (method_exists($this,$instruction[0])) {
+          call_user_func_array(array($this, $instruction[0]), $instruction[1] ? $instruction[1] : array());
+        }
       }
     }
 
@@ -81,8 +96,6 @@ class Doku_Renderer extends DokuWiki_Plugin {
     function toc_additem($id, $text, $level) {}
 
     function header($text, $level, $pos) {}
-
-    function section_edit($start, $end, $level, $name) {}
 
     function section_open($level) {}
 
@@ -158,13 +171,13 @@ class Doku_Renderer extends DokuWiki_Plugin {
 
     function preformatted($text) {}
 
-    function file($text) {}
-
     function quote_open() {}
 
     function quote_close() {}
 
-    function code($text, $lang = NULL) {}
+    function file($text, $lang = null, $file = null ) {}
+
+    function code($text, $lang = null, $file = null ) {}
 
     function acronym($acronym) {}
 
@@ -198,6 +211,8 @@ class Doku_Renderer extends DokuWiki_Plugin {
     // $link is full URL with scheme, $title could be an array (media)
     function externallink($link, $title = NULL) {}
 
+    function rss ($url,$params) {}
+
     // $link is the original link - probably not much use
     // $wikiName is an indentifier for the wiki
     // $wikiUri is the URL fragment to append to some known URL
@@ -226,19 +241,19 @@ class Doku_Renderer extends DokuWiki_Plugin {
         $src,$title=NULL,$align=NULL,$width=NULL,$height=NULL,$cache=NULL
         ) {}
 
-    function table_open($maxcols = NULL, $numrows = NULL){}
+    function table_open($maxcols = null, $numrows = null, $pos = null){}
 
-    function table_close(){}
+    function table_close($pos = null){}
 
     function tablerow_open(){}
 
     function tablerow_close(){}
 
-    function tableheader_open($colspan = 1, $align = NULL){}
+    function tableheader_open($colspan = 1, $align = NULL, $rowspan = 1){}
 
     function tableheader_close(){}
 
-    function tablecell_open($colspan = 1, $align = NULL){}
+    function tablecell_open($colspan = 1, $align = NULL, $rowspan = 1){}
 
     function tablecell_close(){}
 
@@ -259,20 +274,12 @@ class Doku_Renderer extends DokuWiki_Plugin {
         list($name,$hash) = explode('#',$name,2);
         if($hash) return $hash;
 
-        //trim colons or slash of a namespace link
-        $name = rtrim($name,':');
-        if($conf['useslash'])
-          $name = rtrim($name,'/');
-
+        $name = strtr($name,';',':');
         if($conf['useslash']){
-            $nssep = '[:;/]';
-        }else{
-            $nssep = '[:;]';
+            $name = strtr($name,'/',':');
         }
-        $name = preg_replace('!.*'.$nssep.'!','',$name);
 
-        if(!$name) return $this->_simpleTitle($conf['start']);
-        return $name;
+        return noNSorNS($name);
     }
 
     /**
@@ -289,7 +296,7 @@ class Doku_Renderer extends DokuWiki_Plugin {
         }
 
         //split into hash and url part
-        list($wikiUri,$hash) = explode('#',$wikiUri,2);
+        list($reference,$hash) = explode('#',$reference,2);
 
         //replace placeholder
         if(preg_match('#\{(URL|NAME|SCHEME|HOST|PORT|PATH|QUERY)\}#',$url)){
@@ -314,4 +321,4 @@ class Doku_Renderer extends DokuWiki_Plugin {
 }
 
 
-//Setup VIM: ex: et ts=4 enc=utf-8 :
+//Setup VIM: ex: et ts=4 :

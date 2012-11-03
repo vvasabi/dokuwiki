@@ -15,7 +15,7 @@ class auth_ldap extends auth_basic {
     /**
      * Constructor
      */
-    function auth_ldap(){
+    function __construct(){
         global $conf;
         $this->cnf = $conf['auth']['ldap'];
 
@@ -27,10 +27,9 @@ class auth_ldap extends auth_basic {
             return;
         }
 
-        if(empty($this->cnf['groupkey'])) $this->cnf['groupkey'] = 'cn';
-
-        // try to connect
-        if(!$this->_openLDAP()) $this->success = false;
+        if(empty($this->cnf['groupkey']))   $this->cnf['groupkey']   = 'cn';
+        if(empty($this->cnf['userscope']))  $this->cnf['userscope']  = 'sub';
+        if(empty($this->cnf['groupscope'])) $this->cnf['groupscope'] = 'sub';
 
         // auth_ldap currently just handles authentication, so no
         // capabilities are set
@@ -96,7 +95,7 @@ class auth_ldap extends auth_basic {
             return true;
         }else{
             // See if we can find the user
-            $info = $this->getUserData($user);
+            $info = $this->getUserData($user,true);
             if(empty($info['dn'])) {
                 return false;
             } else {
@@ -131,16 +130,18 @@ class auth_ldap extends auth_basic {
      * This LDAP specific function returns the following
      * addional fields:
      *
-     * dn   string  distinguished name (DN)
-     * uid  string  Posix User ID
+     * dn     string  distinguished name (DN)
+     * uid    string  Posix User ID
+     * inbind bool    for internal use - avoid loop in binding
      *
      * @author  Andreas Gohr <andi@splitbrain.org>
      * @author  Trouble
      * @author  Dan Allen <dan.j.allen@gmail.com>
-     * @auhtor  <evaldas.auryla@pheur.org>
+     * @author  <evaldas.auryla@pheur.org>
+     * @author  Stephane Chazelas <stephane.chazelas@emerson.com>
      * @return  array containing user data or false
      */
-    function getUserData($user) {
+    function getUserData($user,$inbind=false) {
         global $conf;
         if(!$this->_openLDAP()) return false;
 
@@ -153,8 +154,16 @@ class auth_ldap extends auth_basic {
                 return false;
             }
             $this->bound = 2;
+        }elseif($this->bound == 0 && !$inbind) {
+            // in some cases getUserData is called outside the authentication workflow
+            // eg. for sending email notification on subscribed pages. This data might not
+            // be accessible anonymously, so we try to rebind the current user here
+            list($loginuser,$loginsticky,$loginpass) = auth_getCookie();
+            if($loginuser && $loginpass){
+                $loginpass = PMA_blowfish_decrypt($loginpass, auth_cookiesalt(!$loginsticky));
+                $this->checkPass($loginuser, $loginpass);
+            }
         }
-        // with no superuser creds we continue as user or anonymous here
 
         $info['user']   = $user;
         $info['server'] = $this->cnf['server'];
@@ -167,13 +176,15 @@ class auth_ldap extends auth_basic {
             $filter = "(ObjectClass=*)";
         }
 
-        $sr     = @ldap_search($this->con, $base, $filter);
+        $sr     = $this->_ldapsearch($this->con, $base, $filter, $this->cnf['userscope']);
         $result = @ldap_get_entries($this->con, $sr);
-        if($this->cnf['debug'])
+        if($this->cnf['debug']){
             msg('LDAP user search: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+            msg('LDAP search at: '.htmlspecialchars($base.' '.$filter),0,__LINE__,__FILE__);
+        }
 
         // Don't accept more or less than one response
-        if($result['count'] != 1){
+        if(!is_array($result) || $result['count'] != 1){
             return false; //user not found
         }
 
@@ -182,6 +193,7 @@ class auth_ldap extends auth_basic {
 
         // general user info
         $info['dn']   = $user_result['dn'];
+        $info['gid']  = $user_result['gidnumber'][0];
         $info['mail'] = $user_result['mail'][0];
         $info['name'] = $user_result['cn'][0];
         $info['grps'] = array();
@@ -209,21 +221,22 @@ class auth_ldap extends auth_basic {
         $user_result = array_merge($info,$user_result);
 
         //get groups for given user if grouptree is given
-        if ($this->cnf['grouptree'] && $this->cnf['groupfilter']) {
+        if ($this->cnf['grouptree'] || $this->cnf['groupfilter']) {
             $base   = $this->_makeFilter($this->cnf['grouptree'], $user_result);
             $filter = $this->_makeFilter($this->cnf['groupfilter'], $user_result);
-
-            $sr = @ldap_search($this->con, $base, $filter, array($this->cnf['groupkey']));
+            $sr = $this->_ldapsearch($this->con, $base, $filter, $this->cnf['groupscope'], array($this->cnf['groupkey']));
+            if($this->cnf['debug']){
+                msg('LDAP group search: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+                msg('LDAP search at: '.htmlspecialchars($base.' '.$filter),0,__LINE__,__FILE__);
+            }
             if(!$sr){
                 msg("LDAP: Reading group memberships failed",-1);
-                if($this->cnf['debug'])
-                    msg('LDAP group search: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
                 return false;
             }
             $result = ldap_get_entries($this->con, $sr);
             ldap_free_result($sr);
 
-            foreach($result as $grp){
+            if(is_array($result)) foreach($result as $grp){
                 if(!empty($grp[$this->cnf['groupkey']][0])){
                     if($this->cnf['debug'])
                         msg('LDAP usergroup: '.htmlspecialchars($grp[$this->cnf['groupkey']][0]),0,__LINE__,__FILE__);
@@ -237,6 +250,63 @@ class auth_ldap extends auth_basic {
             $info['grps'][] = $conf['defaultgroup'];
         }
         return $info;
+    }
+
+    /**
+     * Most values in LDAP are case-insensitive
+     */
+    function isCaseSensitive(){
+        return false;
+    }
+
+    /**
+     * Bulk retrieval of user data
+     *
+     * @author  Dominik Eckelmann <dokuwiki@cosmocode.de>
+     * @param   start     index of first user to be returned
+     * @param   limit     max number of users to be returned
+     * @param   filter    array of field/pattern pairs, null for no filter
+     * @return  array of userinfo (refer getUserData for internal userinfo details)
+     */
+    function retrieveUsers($start=0,$limit=-1,$filter=array()) {
+        if(!$this->_openLDAP()) return false;
+
+        if (!isset($this->users)) {
+            // Perform the search and grab all their details
+            if(!empty($this->cnf['userfilter'])) {
+                $all_filter = str_replace('%{user}', '*', $this->cnf['userfilter']);
+            } else {
+                $all_filter = "(ObjectClass=*)";
+            }
+            $sr=ldap_search($this->con,$this->cnf['usertree'],$all_filter);
+            $entries = ldap_get_entries($this->con, $sr);
+            $users_array = array();
+            for ($i=0; $i<$entries["count"]; $i++){
+                array_push($users_array, $entries[$i]["uid"][0]);
+            }
+            asort($users_array);
+            $result = $users_array;
+            if (!$result) return array();
+            $this->users = array_fill_keys($result, false);
+        }
+        $i = 0;
+        $count = 0;
+        $this->_constructPattern($filter);
+        $result = array();
+
+        foreach ($this->users as $user => &$info) {
+            if ($i++ < $start) {
+                continue;
+            }
+            if ($info === false) {
+                $info = $this->getUserData($user);
+            }
+            if ($this->_filter($user, $info)) {
+                $result[$user] = $info;
+                if (($limit >= 0) && (++$count >= $limit)) break;
+            }
+        }
+        return $result;
     }
 
     /**
@@ -268,6 +338,31 @@ class auth_ldap extends auth_basic {
     }
 
     /**
+     * return 1 if $user + $info match $filter criteria, 0 otherwise
+     *
+     * @author   Chris Smith <chris@jalakai.co.uk>
+     */
+    function _filter($user, $info) {
+        foreach ($this->_pattern as $item => $pattern) {
+            if ($item == 'user') {
+                if (!preg_match($pattern, $user)) return 0;
+            } else if ($item == 'grps') {
+                if (!count(preg_grep($pattern, $info['grps']))) return 0;
+            } else {
+                if (!preg_match($pattern, $info[$item])) return 0;
+            }
+        }
+        return 1;
+    }
+
+    function _constructPattern($filter) {
+        $this->_pattern = array();
+        foreach ($filter as $item => $pattern) {
+            $this->_pattern[$item] = '/'.str_replace('/','\/',$pattern).'/i';    // allow regex characters
+        }
+    }
+
+    /**
      * Escape a string to be used in a LDAP filter
      *
      * Ported from Perl's Net::LDAP::Util escape_filter_value
@@ -292,51 +387,100 @@ class auth_ldap extends auth_basic {
         $this->bound = 0;
 
         $port = ($this->cnf['port']) ? $this->cnf['port'] : 389;
-        $this->con = @ldap_connect($this->cnf['server'],$port);
-        if(!$this->con){
+        $bound = false;
+        $servers = explode(',', $this->cnf['server']);
+        foreach ($servers as $server) {
+            $server = trim($server);
+            $this->con = @ldap_connect($server, $port);
+            if (!$this->con) {
+                continue;
+            }
+
+            /*
+             * When OpenLDAP 2.x.x is used, ldap_connect() will always return a resource as it does
+             * not actually connect but just initializes the connecting parameters. The actual
+             * connect happens with the next calls to ldap_* funcs, usually with ldap_bind().
+             *
+             * So we should try to bind to server in order to check its availability.
+             */
+
+            //set protocol version and dependend options
+            if($this->cnf['version']){
+                if(!@ldap_set_option($this->con, LDAP_OPT_PROTOCOL_VERSION,
+                                     $this->cnf['version'])){
+                    msg('Setting LDAP Protocol version '.$this->cnf['version'].' failed',-1);
+                    if($this->cnf['debug'])
+                        msg('LDAP version set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+                }else{
+                    //use TLS (needs version 3)
+                    if($this->cnf['starttls']) {
+                        if (!@ldap_start_tls($this->con)){
+                            msg('Starting TLS failed',-1);
+                            if($this->cnf['debug'])
+                                msg('LDAP TLS set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+                        }
+                    }
+                    // needs version 3
+                    if(isset($this->cnf['referrals'])) {
+                        if(!@ldap_set_option($this->con, LDAP_OPT_REFERRALS,
+                           $this->cnf['referrals'])){
+                            msg('Setting LDAP referrals to off failed',-1);
+                            if($this->cnf['debug'])
+                                msg('LDAP referal set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+                        }
+                    }
+                }
+            }
+
+            //set deref mode
+            if($this->cnf['deref']){
+                if(!@ldap_set_option($this->con, LDAP_OPT_DEREF, $this->cnf['deref'])){
+                    msg('Setting LDAP Deref mode '.$this->cnf['deref'].' failed',-1);
+                    if($this->cnf['debug'])
+                        msg('LDAP deref set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+                }
+            }
+            /* As of PHP 5.3.0 we can set timeout to speedup skipping of invalid servers */
+            if (defined('LDAP_OPT_NETWORK_TIMEOUT')) {
+                ldap_set_option($this->con, LDAP_OPT_NETWORK_TIMEOUT, 1);
+            }
+            $bound = @ldap_bind($this->con);
+            if ($bound) {
+                break;
+            }
+        }
+
+        if(!$bound) {
             msg("LDAP: couldn't connect to LDAP server",-1);
             return false;
         }
 
-        //set protocol version and dependend options
-        if($this->cnf['version']){
-            if(!@ldap_set_option($this->con, LDAP_OPT_PROTOCOL_VERSION,
-                                 $this->cnf['version'])){
-                msg('Setting LDAP Protocol version '.$this->cnf['version'].' failed',-1);
-                if($this->cnf['debug'])
-                    msg('LDAP version set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
-            }else{
-                //use TLS (needs version 3)
-                if($this->cnf['starttls']) {
-                    if (!@ldap_start_tls($this->con)){
-                        msg('Starting TLS failed',-1);
-                        if($this->cnf['debug'])
-                            msg('LDAP TLS set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
-                    }
-                }
-                // needs version 3
-                if(isset($this->cnf['referrals'])) {
-                    if(!@ldap_set_option($this->con, LDAP_OPT_REFERRALS,
-                       $this->cnf['referrals'])){
-                        msg('Setting LDAP referrals to off failed',-1);
-                        if($this->cnf['debug'])
-                            msg('LDAP referal set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
-                    }
-                }
-            }
-        }
 
-        //set deref mode
-        if($this->cnf['deref']){
-            if(!@ldap_set_option($this->con, LDAP_OPT_DEREF, $this->cnf['deref'])){
-                msg('Setting LDAP Deref mode '.$this->cnf['deref'].' failed',-1);
-                if($this->cnf['debug'])
-                    msg('LDAP deref set: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
-            }
-        }
-
+        $this->canDo['getUsers'] = true;
         return true;
+    }
+
+    /**
+     * Wraps around ldap_search, ldap_list or ldap_read depending on $scope
+     *
+     * @param  $scope string - can be 'base', 'one' or 'sub'
+     * @author Andreas Gohr <andi@splitbrain.org>
+     */
+    function _ldapsearch($link_identifier, $base_dn, $filter, $scope='sub', $attributes=null,
+                         $attrsonly=0, $sizelimit=0, $timelimit=0, $deref=LDAP_DEREF_NEVER){
+        if(is_null($attributes)) $attributes = array();
+
+        if($scope == 'base'){
+            return @ldap_read($link_identifier, $base_dn, $filter, $attributes,
+                             $attrsonly, $sizelimit, $timelimit, $deref);
+        }elseif($scope == 'one'){
+            return @ldap_list($link_identifier, $base_dn, $filter, $attributes,
+                             $attrsonly, $sizelimit, $timelimit, $deref);
+        }else{
+            return @ldap_search($link_identifier, $base_dn, $filter, $attributes,
+                                $attrsonly, $sizelimit, $timelimit, $deref);
+        }
     }
 }
 
-//Setup VIM: ex: et ts=4 enc=utf-8 :
+//Setup VIM: ex: et ts=4 :

@@ -5,10 +5,7 @@
  * @author Andreas Gohr <andi@splitbrain.org>
  */
 
-if(!defined('DOKU_INC')) define('DOKU_INC',realpath(dirname(__FILE__).'/../').'/');
-require_once(DOKU_INC.'inc/HTTPClient.php');
-require_once(DOKU_INC.'inc/SimplePie.php');
-
+if(!defined('DOKU_INC')) die('meh.');
 
 /**
  * We override some methods of the original SimplePie class here
@@ -20,8 +17,15 @@ class FeedParser extends SimplePie {
      */
     function FeedParser(){
         $this->SimplePie();
-        $this->enable_caching(false);
+        $this->enable_cache(false);
         $this->set_file_class('FeedParser_File');
+    }
+
+    /**
+     * Backward compatibility for older plugins
+     */
+    function feed_url($url){
+        $this->set_feed_url($url);
     }
 }
 
@@ -51,6 +55,9 @@ class FeedParser_File extends SimplePie_File {
         $this->headers = $this->http->resp_headers;
         $this->body    = $this->http->resp_body;
         $this->error   = $this->http->error;
+
+        $this->method  = SIMPLEPIE_FILE_SOURCE_REMOTE | SIMPLEPIE_FILE_SOURCE_FSOCKOPEN;
+
         return $this->success;
     }
 

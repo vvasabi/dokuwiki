@@ -294,8 +294,7 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 					if (preg_match('|</li>\s*$|', $aRenderer->doc)) {
 						// need to open a new LI 
 						$aRenderer->doc .= '<li class="level' . ($LEVEL - 1)
-							. '"><' . $LISTS[$CURRENT[$LEVEL]] . '>' .
-							'<div class="li">';
+							. '"><' . $LISTS[$CURRENT[$LEVEL]] . '>';
 						$INLI[$LEVEL - 1] = 0; // no closing P needed
 					} else if (preg_match('|\s*<li[^>]*>\s*<p>\s*$|',
 					$aRenderer->doc, $hits)) {
@@ -303,8 +302,7 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 						$hits = -strlen($hits[0]);
 						$aRenderer->doc = substr($aRenderer->doc, 0, $hits)
 							. '<li class="level' . ($LEVEL - 1)
-							. '"><' . $LISTS[$CURRENT[$LEVEL]] . '>' .
-							'<div class="li">';
+							. '"><' . $LISTS[$CURRENT[$LEVEL]] . '>';
 						$INLI[$LEVEL - 1] = 0; // no closing P needed
 					} else {	// possibly open LI
 						if (isset($INLI[$LEVEL - 1])) {
@@ -319,8 +317,7 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 						} else {	// no open LI
 							$aRenderer->doc .= '<li class="level'
 								. ($LEVEL - 1) . '"><'
-								. $LISTS[$aData[1]] . '>' .
-							'<div class="li">';
+								. $LISTS[$aData[1]] . '>';
 							$INLI[$LEVEL - 1] = 0; // no closing P needed
 						} // if
 					} // if
@@ -331,22 +328,22 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 							. $LISTS[$CURRENT[$LEVEL + 1]] . '>';
 						if (isset($INLI[$LEVEL])) {
 							$aRenderer->doc .= (0 < $INLI[$LEVEL])
-								? '</p></div></li>'
-								: '</div></li>';
+								? '</p></li>'
+								: '</li>';
 						} // if
 					} while (0 > ++$diff);
 				} else if ($aData[1] !=  $CURRENT[$LEVEL]) {
 					// list type changed
 					if (isset($INLI[$LEVEL])) {
 						$aRenderer->doc .= (0 < $INLI[$LEVEL])
-							? '</p></div></li>'
-							: '</div></li>';
+							? '</p></li>'
+							: '</li>';
 					} // if
 					$aRenderer->doc .= '</' . $LISTS[$CURRENT[$LEVEL]]
 						. '><' . $LISTS[$aData[1]] . '>';
 					$CURRENT[$LEVEL] = $aData[1];
 				} // if
-				$aRenderer->doc .= '<li class="level' . $LEVEL . '"><div class="li"><p>';
+				$aRenderer->doc .= '<li class="level' . $LEVEL . '"><p>';
 				$INLI[$LEVEL] = 1;	// closing P needed
 				return TRUE;
 			case DOKU_LEXER_UNMATCHED:
@@ -358,14 +355,14 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 					if (strlen($aData[1])) {
 						if (isset($INLI[$LEVEL])) {
 							$aRenderer->doc .= (0 < $INLI[$LEVEL]) // LI P
-								? $aData[1] . '</p></div></li>'
-								: '<p>' . $aData[1] . '</p></div></li>';
+								? $aData[1] . '</p></li>'
+								: '<p>' . $aData[1] . '</p></li>';
 						} else {	// no LI
 							if (1 < $LEVEL) {	// assume a trailing LI text
 								--$LEVEL;
 								$aRenderer->doc .= '</'
 									. $LISTS[$CURRENT[$LEVEL + 1]] . '><p>'
-									. $aData[1] . '</p></div></li>';
+									. $aData[1] . '</p></li>';
 							} else {
 //XXX: There must be no data w/o context; the markup is broken. Whatever we
 // could do it would be WRONG (and break XHMTL validity); hence comment:
@@ -386,8 +383,8 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 								substr($aRenderer->doc, 0, $hits) . '</li>';
 						} else if (isset($INLI[$LEVEL])) {
 							$aRenderer->doc .= (0 < $INLI[$LEVEL])
-								? '</p></div></li>'
-								: '</div></li>';
+								? '</p></li>'
+								: '</li>';
 						} // if
 					} // if
 					unset($INLI[$LEVEL]);
@@ -419,8 +416,8 @@ class syntax_plugin_lists extends DokuWiki_Syntax_Plugin {
 					$aRenderer->doc .= '</'. $LISTS[$CURRENT[$LEVEL + 1]] .'>';
 					if (isset($INLI[$LEVEL])) {
 						$aRenderer->doc .= (0 < $INLI[$LEVEL])
-							? '</p></div></li>'
-							: '</div></li>';
+							? '</p></li>'
+							: '</li>';
 					} // if
 				} // while
 				// Since we have to use PType 'normal' we must open

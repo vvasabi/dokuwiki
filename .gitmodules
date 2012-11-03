@@ -1,0 +1,3 @@
+[submodule "lib/tpl/arctic"]
+	path = lib/tpl/arctic
+	url = git://github.com/vvasabi/dokuwiki-template-arctic.git

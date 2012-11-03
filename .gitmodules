@@ -7,3 +7,6 @@
 [submodule "lib/plugins/pagemove"]
 	path = lib/plugins/pagemove
 	url = git://github.com/desolat/DokuWiki-Pagemove-Plugin.git
+[submodule "lib/plugins/googleanalytics"]
+	path = lib/plugins/googleanalytics
+	url = git://github.com/tatewake/dokuwiki-plugin-googleanalytics.git

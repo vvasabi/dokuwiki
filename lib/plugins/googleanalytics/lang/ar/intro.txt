@@ -1,0 +1,17 @@
+﻿====== محلل جووجل ======
+
+تسمح هذه الأداة بتضمين شيفرة **محلل جووجل** من أجل الحصول على إحصائيات كاملة عن موقعك ، لمزيد من التفاصيل بإمكانك مراجعة هذا الرابط [[wp>Google_Analytics|Google Analytics]]
+
+بالإمكان تضمين الشيفرة التالية في أي مكان من القالب المستعمل داخل الوسم **<head></head>**
+
+<code php>
+<?php
+if (file_exists(DOKU_PLUGIN.'googleanalytics/code.php')) include_once(DOKU_PLUGIN.'googleanalytics/code.php');
+if (function_exists('ga_google_analytics_code')) ga_google_analytics_code();
+?>
+</code>
+
+**ملاحظة**: الشيفرة الموضحة أعلاه مهمة لعمل البرنامج الإضافي بدونها لن يستطيع **محلل جووجل** العثور على موقعك
+
+خصائص البرنامج الإضافي:
+

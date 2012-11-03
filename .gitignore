@@ -26,17 +26,3 @@
 /data/meta/*
 /data/pages/*
 /data/tmp/*
-/lib/plugins/*
-!/lib/plugins/acl
-!/lib/plugins/config
-!/lib/plugins/info
-!/lib/plugins/plugin
-!/lib/plugins/popularity
-!/lib/plugins/revert
-!/lib/plugins/safefnrecode
-!/lib/plugins/testing
-!/lib/plugins/usermanager
-!/lib/plugins/action.php
-!/lib/plugins/admin.php
-!/lib/plugins/index.html
-!/lib/plugins/syntax.php
